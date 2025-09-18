@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 use core::ops::{Add, Sub};
+use serde::{Serialize, Deserialize};
 
 use super::traits::FloatingPoint;
 
@@ -17,6 +18,32 @@ pub struct Vector3<T: FloatingPoint = f32> {
     pub x: T,
     pub y: T,
     pub z: T,
+}
+
+// Conditional impls for serde
+impl<T> Serialize for Vector3<T>
+where
+    T: FloatingPoint + Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        (&self.x, &self.y, &self.z).serialize(serializer)
+    }
+}
+
+impl<'de, T> Deserialize<'de> for Vector3<T>
+where
+    T: FloatingPoint + Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let (x, y, z) = <(T, T, T)>::deserialize(deserializer)?;
+        Ok(Vector3 { x, y, z })
+    }
 }
 
 impl<T: FloatingPoint> Vector3<T> {
@@ -54,6 +81,78 @@ impl<T: FloatingPoint> Sub for Vector3<T> {
 
     fn sub(self, other: Self) -> Self {
         Self::new(self.x - other.x, self.y - other.y, self.z - other.z)
+    }
+}
+
+// Conversions between Vector3<T> and tuples
+
+impl<T: FloatingPoint> From<(T, T, T)> for Vector3<T> {
+    fn from(tuple: (T, T, T)) -> Self {
+        Self {
+            x: tuple.0,
+            y: tuple.1,
+            z: tuple.2,
+        }
+    }
+}
+
+impl<T: FloatingPoint> Into<(T, T, T)> for Vector3<T> {
+    fn into(self) -> (T, T, T) {
+        (self.x, self.y, self.z)
+    }
+}
+
+// Conversions between Vector3<T> and arrays [T; 3]
+
+impl<T: FloatingPoint> From<[T; 3]> for Vector3<T> {
+    fn from(array: [T; 3]) -> Self {
+        Self {
+            x: array[0],
+            y: array[1],
+            z: array[2],
+        }
+    }
+}
+
+impl<T: FloatingPoint> Into<[T; 3]> for Vector3<T> {
+    fn into(self) -> [T; 3] {
+        [self.x, self.y, self.z]
+    }
+}
+
+// Conversions from references to Vector3<T>
+
+impl<T: FloatingPoint> From<&(T, T, T)> for Vector3<T> {
+    fn from(tuple: &(T, T, T)) -> Self {
+        Self {
+            x: tuple.0,
+            y: tuple.1,
+            z: tuple.2,
+        }
+    }
+}
+
+impl<T: FloatingPoint> From<&[T; 3]> for Vector3<T> {
+    fn from(array: &[T; 3]) -> Self {
+        Self {
+            x: array[0],
+            y: array[1],
+            z: array[2],
+        }
+    }
+}
+
+// Reverse conversions: from &Vector3<T> into tuples and arrays
+
+impl<T: FloatingPoint> From<&Vector3<T>> for (T, T, T) {
+    fn from(v: &Vector3<T>) -> Self {
+        (v.x, v.y, v.z)
+    }
+}
+
+impl<T: FloatingPoint> From<&Vector3<T>> for [T; 3] {
+    fn from(v: &Vector3<T>) -> Self {
+        [v.x, v.y, v.z]
     }
 }
 
@@ -112,4 +211,83 @@ mod tests {
         let s64 = v64 + w64;
         assert_eq!(s64, Vector3::new(4.0, 4.0, 4.0));
     }
+
+    #[test]
+    fn test_tuple_conversions() {
+        let tup = (1.0f32, 2.0f32, 3.0f32);
+
+        let v: Vector3<f32> = tup.into();
+        assert_eq!(v, Vector3::new(1.0, 2.0, 3.0));
+
+        let back: (f32, f32, f32) = v.into();
+        assert_eq!(back, tup);
+    }
+
+    #[test]
+    fn test_array_conversions() {
+        let arr = [1.0f32, 2.0f32, 3.0f32];
+
+        let v: Vector3<f32> = arr.into();
+        assert_eq!(v, Vector3::new(1.0, 2.0, 3.0));
+
+        let back: [f32; 3] = v.into();
+        assert_eq!(back, arr);
+    }
+
+    #[test]
+    fn test_reference_tuple_conversion() {
+        let tup = (1.0f32, 2.0f32, 3.0f32);
+        let v = Vector3::from(&tup);
+        assert_eq!(v, Vector3::new(1.0, 2.0, 3.0));
+    }
+
+    #[test]
+    fn test_reference_array_conversion() {
+        let arr = [1.0f32, 2.0f32, 3.0f32];
+        let v = Vector3::from(&arr);
+        assert_eq!(v, Vector3::new(1.0, 2.0, 3.0));
+    }
+
+    #[test]
+    fn test_vector_ref_into_tuple_and_array() {
+        let v = Vector3::new(7.0f32, 8.0f32, 9.0f32);
+
+        let tup: (f32, f32, f32) = (&v).into();
+        assert_eq!(tup, (7.0, 8.0, 9.0));
+
+        let arr: [f32; 3] = (&v).into();
+        assert_eq!(arr, [7.0, 8.0, 9.0]);
+    }
+
+    #[test]
+    fn test_bincode_roundtrip() {
+        use bincode;
+        let v = Vector3::new(1.0f32, 2.0f32, 3.0f32);
+
+        // Serialize to bytes
+        let encoded: Vec<u8> = bincode::serialize(&v).expect("serialize failed");
+        assert!(!encoded.is_empty());
+
+        // Deserialize back
+        let decoded: Vector3<f32> = bincode::deserialize(&encoded).expect("deserialize failed");
+        assert_eq!(v, decoded);
+    }
+
+    #[test]
+    fn test_bincode_generic_roundtrip() {
+        use bincode;
+
+        // f32 works
+        let v_f32 = Vector3::new(1.0f32, 2.0f32, 3.0f32);
+        let enc_f32 = bincode::serialize(&v_f32).unwrap();
+        let dec_f32: Vector3<f32> = bincode::deserialize(&enc_f32).unwrap();
+        assert_eq!(v_f32, dec_f32);
+
+        // f64 works
+        let v_f64 = Vector3::new(10.0f64, 20.0f64, 30.0f64);
+        let enc_f64 = bincode::serialize(&v_f64).unwrap();
+        let dec_f64: Vector3<f64> = bincode::deserialize(&enc_f64).unwrap();
+        assert_eq!(v_f64, dec_f64);
+    }
+
 }
