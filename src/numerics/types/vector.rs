@@ -57,9 +57,29 @@ impl<T: FloatingPoint> Vector3<T> {
     /// users may construct via Vector3::new).
     ///
     /// Kept minimal to avoid extra trait bounds.
+    /// Vector of all zeros
     #[allow(dead_code)]
-    pub fn zero(x: T, y: T, z: T) -> Self {
-        Self { x, y, z }
+    pub fn zero() -> Self
+    where
+        T: From<f32>,
+    {
+        Self {
+            x: T::zero(),
+            y: T::zero(),
+            z: T::zero(),
+        }
+    }
+
+    /// Vector of all ones
+    pub fn one() -> Self
+    where
+        T: From<f32>,
+    {
+        Self {
+            x: T::one(),
+            y: T::one(),
+            z: T::one(),
+        }
     }
 }
 
@@ -288,6 +308,15 @@ mod tests {
         let enc_f64 = bincode::serialize(&v_f64).unwrap();
         let dec_f64: Vector3<f64> = bincode::deserialize(&enc_f64).unwrap();
         assert_eq!(v_f64, dec_f64);
+    }
+
+    #[test]
+    fn test_vector_zero_one() {
+        let z = Vector3::<f32>::zero();
+        assert_eq!(z, Vector3::new(0.0, 0.0, 0.0));
+
+        let o = Vector3::<f32>::one();
+        assert_eq!(o, Vector3::new(1.0, 1.0, 1.0));
     }
 
 }
