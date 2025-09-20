@@ -8,9 +8,16 @@
 ///
 /// Note: We require Copy, PartialOrd and the basic arithmetic ops on Self.
 pub trait FloatingPoint:
-Copy + Clone + PartialEq + PartialOrd +
-core::ops::Add<Output = Self> + core::ops::Sub<Output = Self> +
-core::ops::Mul<Output = Self> + core::ops::Div<Output = Self>
+Copy
++ Clone
++ Default
++ PartialEq
++ PartialOrd
++ std::fmt::Debug
++ std::ops::Add<Output = Self>
++ std::ops::Sub<Output = Self>
++ std::ops::Mul<Output = Self>
++ std::ops::Div<Output = Self>
 {
     fn zero() -> Self;
     fn one() -> Self;

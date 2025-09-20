@@ -13,6 +13,7 @@ pub type Point3Float<T = f32> = Vector3<T>;
 
 #[cfg(test)]
 mod tests {
+    use bincode::config;
     use super::*;
 
     #[test]
@@ -23,10 +24,11 @@ mod tests {
 
     #[test]
     fn test_point3_bincode_roundtrip() {
+        let config = config::standard();
         let p: Point3<f64> = Point3::new(1.1, 2.2, 3.3);
 
-        let encoded = bincode::serialize(&p).unwrap();
-        let decoded: Point3<f64> = bincode::deserialize(&encoded).unwrap();
+        let encoded = bincode::encode_to_vec(&p, config).unwrap();
+        let (decoded, _len): (Point3<f64>, _) = bincode::decode_from_slice(&encoded, config).unwrap();
 
         assert_eq!(p, decoded);
     }

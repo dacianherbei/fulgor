@@ -6,19 +6,22 @@
 
 use core::ops::{Add, Sub};
 use serde::{Serialize, Deserialize};
-
+use bincode::{Encode, Decode};
 use super::traits::FloatingPoint;
 
 /// Vector3 is a simple 3D vector type with template-able numeric type.
 ///
 /// The public alias `Vector3<T>` is provided below for compatibility with the
 /// "Vector3" name while keeping the full-word struct name as requested.
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Vector3<T: FloatingPoint = f32> {
+#[derive(Copy, Clone, Debug, PartialEq, Encode, Decode)]
+pub struct Vector3<T: FloatingPoint> {
     pub x: T,
     pub y: T,
     pub z: T,
 }
+
+pub type Vector3f = Vector3<f32>;
+pub type Vector3d = Vector3<f64>;
 
 // Conditional impls for serde
 impl<T> Serialize for Vector3<T>
@@ -194,11 +197,14 @@ impl Vector3<f32> {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Vector2<T: FloatingPoint = f32> {
+#[derive(Copy, Clone, Debug, PartialEq, Encode, Decode)]
+pub struct Vector2<T: FloatingPoint> {
     pub x: T,
     pub y: T,
 }
+
+pub type Vector2f = Vector2<f32>;
+pub type Vector2d = Vector2<f64>;
 
 // Conditional impls for serde
 impl<T> Serialize for Vector2<T>
@@ -368,13 +374,16 @@ impl Vector2<f32> {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Vector4<T: FloatingPoint = f32> {
+#[derive(Copy, Clone, Debug, PartialEq, Encode, Decode)]
+pub struct Vector4<T: FloatingPoint> {
     pub x: T,
     pub y: T,
     pub z: T,
     pub w: T,
 }
+
+pub type Vector4f = Vector4<f32>;
+pub type Vector4d = Vector4<f64>;
 
 // Conditional impls for serde
 impl<T> Serialize for Vector4<T>
@@ -584,7 +593,7 @@ mod tests {
     #[test]
     fn test_vector_alias_and_generic_type() {
         // Using the alias Vector3 (defaulted to f32)
-        let v_alias: Vector3 = Vector3::new(0.0, 0.0, 1.0);
+        let v_alias: Vector3<f32> = Vector3::new(0.0, 0.0, 1.0);
         assert_eq!(v_alias.z, 1.0_f32);
 
         // Using a f64 instantiation
@@ -646,29 +655,33 @@ mod tests {
         use bincode;
         let v = Vector3::new(1.0f32, 2.0f32, 3.0f32);
 
+        // Bincode 2.x requires a configuration
+        let config = bincode::config::standard();
+
         // Serialize to bytes
-        let encoded: Vec<u8> = bincode::serialize(&v).expect("serialize failed");
+        let encoded: Vec<u8> = bincode::encode_to_vec(&v,config).expect("serialize failed");
         assert!(!encoded.is_empty());
 
         // Deserialize back
-        let decoded: Vector3<f32> = bincode::deserialize(&encoded).expect("deserialize failed");
+        let (decoded, _len): (Vector3<f32>,_) = bincode::decode_from_slice(&encoded, config).expect("deserialize failed");
         assert_eq!(v, decoded);
     }
 
     #[test]
     fn test_bincode_generic_roundtrip() {
-        use bincode;
+        // Bincode 2.x requires a configuration
+        let config = bincode::config::standard();
 
         // f32 works
         let v_f32 = Vector3::new(1.0f32, 2.0f32, 3.0f32);
-        let enc_f32 = bincode::serialize(&v_f32).unwrap();
-        let dec_f32: Vector3<f32> = bincode::deserialize(&enc_f32).unwrap();
+        let enc_f32 = bincode::encode_to_vec(&v_f32, config).unwrap();
+        let (dec_f32, _len): (Vector3<f32>, _) = bincode::decode_from_slice(&enc_f32, config).unwrap();
         assert_eq!(v_f32, dec_f32);
 
         // f64 works
         let v_f64 = Vector3::new(10.0f64, 20.0f64, 30.0f64);
-        let enc_f64 = bincode::serialize(&v_f64).unwrap();
-        let dec_f64: Vector3<f64> = bincode::deserialize(&enc_f64).unwrap();
+        let enc_f64 = bincode::encode_to_vec(&v_f64, config).unwrap();
+        let (dec_f64, _len): (Vector3<f64>, _) = bincode::decode_from_slice(&enc_f64, config).unwrap();
         assert_eq!(v_f64, dec_f64);
     }
 
@@ -703,7 +716,7 @@ mod tests {
     #[test]
     fn test_vector_alias_and_generic_type_vector2() {
         // Using the alias Vector2 (defaulted to f32)
-        let v_alias: Vector2 = Vector2::new(0.0, 1.0);
+        let v_alias: Vector2<f32> = Vector2::new(0.0, 1.0);
         assert_eq!(v_alias.y, 1.0_f32);
 
         // Using a f64 instantiation
@@ -762,32 +775,35 @@ mod tests {
 
     #[test]
     fn test_bincode_roundtrip_vector2() {
-        use bincode;
         let v = Vector2::new(1.0f32, 2.0f32);
 
+        // Bincode 2.x requires a configuration
+        let config = bincode::config::standard();
+
         // Serialize to bytes
-        let encoded: Vec<u8> = bincode::serialize(&v).expect("serialize failed");
+        let encoded: Vec<u8> = bincode::encode_to_vec(&v, config).expect("serialize failed");
         assert!(!encoded.is_empty());
 
         // Deserialize back
-        let decoded: Vector2<f32> = bincode::deserialize(&encoded).expect("deserialize failed");
+        let (decoded, _len): (Vector2<f32>, _) = bincode::decode_from_slice(&encoded, config).expect("deserialize failed");
         assert_eq!(v, decoded);
     }
 
     #[test]
     fn test_bincode_generic_roundtrip_vector2() {
-        use bincode;
+        // Bincode 2.x requires a configuration
+        let config = bincode::config::standard();
 
         // f32 works
         let v_f32 = Vector2::new(1.0f32, 2.0f32);
-        let enc_f32 = bincode::serialize(&v_f32).unwrap();
-        let dec_f32: Vector2<f32> = bincode::deserialize(&enc_f32).unwrap();
+        let enc_f32 = bincode::encode_to_vec(&v_f32, config).unwrap();
+        let (dec_f32, _len): (Vector2<f32>, _) = bincode::decode_from_slice(&enc_f32, config).unwrap();
         assert_eq!(v_f32, dec_f32);
 
         // f64 works
         let v_f64 = Vector2::new(10.0f64, 20.0f64);
-        let enc_f64 = bincode::serialize(&v_f64).unwrap();
-        let dec_f64: Vector2<f64> = bincode::deserialize(&enc_f64).unwrap();
+        let enc_f64 = bincode::encode_to_vec(&v_f64, config).unwrap();
+        let (dec_f64, _len): (Vector2<f64>, _) = bincode::decode_from_slice(&enc_f64, config).unwrap();
         assert_eq!(v_f64, dec_f64);
     }
 
@@ -822,7 +838,7 @@ mod tests {
     #[test]
     fn test_vector_alias_and_generic_type_vector4() {
         // Using the alias Vector4 (defaulted to f32)
-        let v_alias: Vector4 = Vector4::new(0.0, 0.0, 0.0, 1.0);
+        let v_alias: Vector4<f32> = Vector4::new(0.0, 0.0, 0.0, 1.0);
         assert_eq!(v_alias.w, 1.0_f32);
 
         // Using a f64 instantiation
@@ -881,32 +897,35 @@ mod tests {
 
     #[test]
     fn test_bincode_roundtrip_vector4() {
-        use bincode;
+        // Bincode 2.x requires a configuration
+        let config = bincode::config::standard();
+
         let v = Vector4::new(1.0f32, 2.0f32, 3.0f32, 4.0f32);
 
         // Serialize to bytes
-        let encoded: Vec<u8> = bincode::serialize(&v).expect("serialize failed");
+        let encoded: Vec<u8> = bincode::encode_to_vec(&v, config).expect("serialize failed");
         assert!(!encoded.is_empty());
 
         // Deserialize back
-        let decoded: Vector4<f32> = bincode::deserialize(&encoded).expect("deserialize failed");
+        let (decoded, _len): (Vector4<f32>, _) = bincode::decode_from_slice(&encoded, config).expect("deserialize failed");
         assert_eq!(v, decoded);
     }
 
     #[test]
     fn test_bincode_generic_roundtrip_vector4() {
-        use bincode;
+        // Bincode 2.x requires a configuration
+        let config = bincode::config::standard();
 
         // f32 works
         let v_f32 = Vector4::new(1.0f32, 2.0f32, 3.0f32, 4.0f32);
-        let enc_f32 = bincode::serialize(&v_f32).unwrap();
-        let dec_f32: Vector4<f32> = bincode::deserialize(&enc_f32).unwrap();
+        let enc_f32 = bincode::encode_to_vec(&v_f32, config).unwrap();
+        let (dec_f32, _len): (Vector4<f32>, _) = bincode::decode_from_slice(&enc_f32, config).unwrap();
         assert_eq!(v_f32, dec_f32);
 
         // f64 works
         let v_f64 = Vector4::new(10.0f64, 20.0f64, 30.0f64, 40.0f64);
-        let enc_f64 = bincode::serialize(&v_f64).unwrap();
-        let dec_f64: Vector4<f64> = bincode::deserialize(&enc_f64).unwrap();
+        let enc_f64 = bincode::encode_to_vec(&v_f64, config).unwrap();
+        let (dec_f64, _len): (Vector4<f64>, _) = bincode::decode_from_slice(&enc_f64, config).unwrap();
         assert_eq!(v_f64, dec_f64);
     }
 

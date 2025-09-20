@@ -10,10 +10,11 @@ use crate::numerics::types::vector::Vector3;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, Index, IndexMut, Mul, Sub, AddAssign, Div, MulAssign, Neg, SubAssign};
 use std::fmt;
+use bincode::{Decode, Encode};
 
 /// Minimal Matrix3x3 type placeholder for now.
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Matrix3x3<T: FloatingPoint = f32> {
+#[derive(Copy, Clone, Debug, PartialEq, Encode, Decode)]
+pub struct Matrix3x3<T: FloatingPoint> {
     pub data: [[T; 3]; 3],
 }
 
@@ -208,8 +209,8 @@ impl<T: FloatingPoint + From<f32>> Mul<Matrix3x3<T>> for Matrix3x3<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct Matrix2x2<T: FloatingPoint = f32> {
+#[derive(Debug, Clone, Copy, PartialEq, Encode, Decode)]
+pub struct Matrix2x2<T: FloatingPoint> {
     pub data: [[T; 2]; 2],
 }
 
@@ -369,8 +370,8 @@ impl<T: FloatingPoint> Mul<Matrix2x2<T>> for Matrix2x2<T> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Matrix4x4<T: FloatingPoint = f32> {
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+pub struct Matrix4x4<T: FloatingPoint> {
     pub data: [[T; 4]; 4],
 }
 
@@ -922,17 +923,21 @@ where
 mod tests {
     use super::*;
     use bincode;
+    use bincode::config;
 
     #[test]
     fn test_matrix_roundtrip() {
+        // Bincode 2.x requires a configuration
+        let config = config::standard();
+
         let m = Matrix3x3::new([
             [1.0f32, 2.0f32, 3.0f32],
             [4.0f32, 5.0f32, 6.0f32],
             [7.0f32, 8.0f32, 9.0f32],
         ]);
 
-        let encoded = bincode::serialize(&m).unwrap();
-        let decoded: Matrix3x3<f32> = bincode::deserialize(&encoded).unwrap();
+        let encoded = bincode::encode_to_vec(&m, config).unwrap();
+        let (decoded, _len): (Matrix3x3<f32>, _) = bincode::decode_from_slice(&encoded, config).unwrap();
 
         assert_eq!(m, decoded);
     }
@@ -1096,9 +1101,10 @@ mod tests {
 
     #[test]
     fn test_serialization_bincode_matrix4x4() {
+        let config = config::standard();
         let m = Matrix4x4::<f32>::identity();
-        let encoded = bincode::serialize(&m.data).unwrap();
-        let decoded: [[f32; 4]; 4] = bincode::deserialize(&encoded).unwrap();
+        let encoded = bincode::encode_to_vec(&m.data, config).unwrap();
+        let (decoded, _len): ([[f32; 4]; 4], _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(decoded, m.data);
     }
 
@@ -1317,9 +1323,10 @@ mod tests {
 
     #[test]
     fn test_serialization_bincode_roundtrip() {
+        let config = config::standard();
         let m = Matrix4x4::<f32>::identity();
-        let encoded = bincode::serialize(&m.data).unwrap();
-        let decoded: [[f32; 4]; 4] = bincode::deserialize(&encoded).unwrap();
+        let encoded = bincode::encode_to_vec(&m.data, config).unwrap();
+        let (decoded, _len): ([[f32; 4]; 4], _) = bincode::decode_from_slice(&encoded, config).unwrap();
         assert_eq!(decoded, m.data);
     }
 }
