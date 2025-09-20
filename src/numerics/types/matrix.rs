@@ -4,11 +4,12 @@
 
 #![allow(dead_code)]
 
-use serde::{Serialize, Deserialize};
-use std::ops::{Add, Sub, Mul, Index, IndexMut};
 use crate::numerics::types::traits::FloatingPoint;
-use crate::numerics::types::vector::Vector3;
 use crate::numerics::types::vector::Vector2;
+use crate::numerics::types::vector::Vector3;
+use serde::{Deserialize, Serialize};
+use std::ops::{Add, Index, IndexMut, Mul, Sub, AddAssign, Div, MulAssign, Neg, SubAssign};
+use std::fmt;
 
 /// Minimal Matrix3x3 type placeholder for now.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -198,10 +199,9 @@ impl<T: FloatingPoint + From<f32>> Mul<Matrix3x3<T>> for Matrix3x3<T> {
         let mut result = [[T::zero(); 3]; 3];
         for i in 0..3 {
             for j in 0..3 {
-                result[i][j] =
-                    self.data[i][0] * rhs.data[0][j] +
-                        self.data[i][1] * rhs.data[1][j] +
-                        self.data[i][2] * rhs.data[2][j];
+                result[i][j] = self.data[i][0] * rhs.data[0][j]
+                    + self.data[i][1] * rhs.data[1][j]
+                    + self.data[i][2] * rhs.data[2][j];
             }
         }
         Matrix3x3 { data: result }
@@ -225,28 +225,26 @@ impl<T: FloatingPoint> Matrix2x2<T> {
 
     pub fn from_columns(c0: [T; 2], c1: [T; 2]) -> Self {
         Self {
-            data: [
-                [c0[0], c1[0]],
-                [c0[1], c1[1]],
-            ],
+            data: [[c0[0], c1[0]], [c0[1], c1[1]]],
         }
     }
 
     /// Constants
     pub fn zero() -> Self {
-        Self { data: [[T::zero(); 2]; 2] }
+        Self {
+            data: [[T::zero(); 2]; 2],
+        }
     }
 
     pub fn one() -> Self {
-        Self { data: [[T::one(); 2]; 2] }
+        Self {
+            data: [[T::one(); 2]; 2],
+        }
     }
 
     pub fn identity() -> Self {
         Self {
-            data: [
-                [T::one(), T::zero()],
-                [T::zero(), T::one()],
-            ],
+            data: [[T::one(), T::zero()], [T::zero(), T::one()]],
         }
     }
 
@@ -289,8 +287,14 @@ impl<T: FloatingPoint> Add for Matrix2x2<T> {
     fn add(self, rhs: Self) -> Self::Output {
         Self {
             data: [
-                [self.data[0][0] + rhs.data[0][0], self.data[0][1] + rhs.data[0][1]],
-                [self.data[1][0] + rhs.data[1][0], self.data[1][1] + rhs.data[1][1]],
+                [
+                    self.data[0][0] + rhs.data[0][0],
+                    self.data[0][1] + rhs.data[0][1],
+                ],
+                [
+                    self.data[1][0] + rhs.data[1][0],
+                    self.data[1][1] + rhs.data[1][1],
+                ],
             ],
         }
     }
@@ -301,8 +305,14 @@ impl<T: FloatingPoint> Sub for Matrix2x2<T> {
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
             data: [
-                [self.data[0][0] - rhs.data[0][0], self.data[0][1] - rhs.data[0][1]],
-                [self.data[1][0] - rhs.data[1][0], self.data[1][1] - rhs.data[1][1]],
+                [
+                    self.data[0][0] - rhs.data[0][0],
+                    self.data[0][1] - rhs.data[0][1],
+                ],
+                [
+                    self.data[1][0] - rhs.data[1][0],
+                    self.data[1][1] - rhs.data[1][1],
+                ],
             ],
         }
     }
@@ -364,13 +374,15 @@ pub struct Matrix4x4<T: FloatingPoint = f32> {
     pub data: [[T; 4]; 4],
 }
 
-impl<T: FloatingPoint> Matrix4x4<T> {
+impl<T: FloatingPoint + std::ops::Neg<Output = T>> Matrix4x4<T> {
     pub fn new(data: [[T; 4]; 4]) -> Self {
         Self { data }
     }
 
     pub fn from_rows(r0: [T; 4], r1: [T; 4], r2: [T; 4], r3: [T; 4]) -> Self {
-        Self { data: [r0, r1, r2, r3] }
+        Self {
+            data: [r0, r1, r2, r3],
+        }
     }
 
     pub fn from_columns(c0: [T; 4], c1: [T; 4], c2: [T; 4], c3: [T; 4]) -> Self {
@@ -385,11 +397,15 @@ impl<T: FloatingPoint> Matrix4x4<T> {
     }
 
     pub fn zero() -> Self {
-        Self { data: [[T::zero(); 4]; 4] }
+        Self {
+            data: [[T::zero(); 4]; 4],
+        }
     }
 
     pub fn one() -> Self {
-        Self { data: [[T::one(); 4]; 4] }
+        Self {
+            data: [[T::one(); 4]; 4],
+        }
     }
 
     pub fn identity() -> Self {
@@ -543,8 +559,15 @@ impl<T: FloatingPoint> Matrix4x4<T> {
             self.data[r][index] = col[r];
         }
     }
-}
 
+    pub fn trace(&self) -> T {
+        let mut s = T::zero();
+        for i in 0..4 {
+            s = s + self.data[i][i];
+        }
+        s
+    }
+}
 
 impl<T: FloatingPoint> Index<usize> for Matrix4x4<T> {
     type Output = [T; 4];
@@ -574,11 +597,17 @@ pub struct ColumnIter<'a, T: FloatingPoint> {
 
 impl<T: FloatingPoint> Matrix4x4<T> {
     pub fn rows(&self) -> RowIter<'_, T> {
-        RowIter { data: &self.data, index: 0 }
+        RowIter {
+            data: &self.data,
+            index: 0,
+        }
     }
 
     pub fn columns(&self) -> ColumnIter<'_, T> {
-        ColumnIter { data: &self.data, index: 0 }
+        ColumnIter {
+            data: &self.data,
+            index: 0,
+        }
     }
 }
 
@@ -625,11 +654,17 @@ pub struct ColumnIterMut<'a, T: FloatingPoint> {
 
 impl<T: FloatingPoint> Matrix4x4<T> {
     pub fn rows_mut(&mut self) -> RowIterMut<'_, T> {
-        RowIterMut { data: &mut self.data, index: 0 }
+        RowIterMut {
+            data: &mut self.data,
+            index: 0,
+        }
     }
 
     pub fn columns_mut(&mut self) -> ColumnIterMut<'_, T> {
-        ColumnIterMut { data: &mut self.data, index: 0 }
+        ColumnIterMut {
+            data: &mut self.data,
+            index: 0,
+        }
     }
 }
 
@@ -661,7 +696,10 @@ impl<'a, T: FloatingPoint> Iterator for ColumnIterMut<'a, T> {
             // SAFETY: Each call to next() returns a different column,
             // so we won't have overlapping mutable references
             let data = unsafe { &mut *(self.data as *mut [[T; 4]; 4]) };
-            Some(ColumnMut { data, col: col_index })
+            Some(ColumnMut {
+                data,
+                col: col_index,
+            })
         } else {
             None
         }
@@ -710,13 +748,176 @@ impl<'a, T: FloatingPoint> IntoIterator for &'a mut Matrix4x4<T> {
 
 impl<T: FloatingPoint> IntoIterator for Matrix4x4<T> {
     type Item = [T; 4];
-    type IntoIter = std::array::IntoIter<[T; 4], 4>;  // Be explicit about the array IntoIter
+    type IntoIter = std::array::IntoIter<[T; 4], 4>; // Be explicit about the array IntoIter
 
     fn into_iter(self) -> Self::IntoIter {
         self.data.into_iter()
     }
 }
 
+/// --- inverse() via adjugate / determinant
+impl<T> Matrix4x4<T>
+where
+    T: FloatingPoint + Neg<Output = T> + Div<Output = T> + AddAssign + SubAssign + MulAssign,
+{
+    /// Compute the inverse. Returns None if matrix is singular (determinant == 0).
+    /// Note: numeric stability is basic here; for production consider LU decomposition.
+    pub fn inverse(&self) -> Option<Self> {
+        // compute determinant
+        let det = self.determinant();
+        if det == T::zero() {
+            return None;
+        }
+
+        // compute matrix of cofactors (3x3 minors with sign)
+        let mut cof = [[T::zero(); 4]; 4];
+        for r in 0..4 {
+            for c in 0..4 {
+                // build 3x3 minor for element (r,c)
+                let mut minor = [[T::zero(); 3]; 3];
+                let mut rr = 0;
+                for i in 0..4 {
+                    if i == r { continue; }
+                    let mut cc = 0;
+                    for j in 0..4 {
+                        if j == c { continue; }
+                        minor[rr][cc] = self.data[i][j];
+                        cc += 1;
+                    }
+                    rr += 1;
+                }
+                // determinant of 3x3 minor
+                let m = &minor;
+                let det3 = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                    - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                    + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+                // cofactor sign
+                let sign = if ((r + c) % 2) == 0 { T::one() } else { -T::one() };
+                cof[r][c] = sign * det3;
+            }
+        }
+
+        // adjugate = transpose(cofactor matrix)
+        let mut adj = [[T::zero(); 4]; 4];
+        for r in 0..4 {
+            for c in 0..4 {
+                adj[c][r] = cof[r][c];
+            }
+        }
+
+        // divide adjugate by determinant
+        let mut inv = [[T::zero(); 4]; 4];
+        for r in 0..4 {
+            for c in 0..4 {
+                inv[r][c] = adj[r][c] / det;
+            }
+        }
+
+        Some(Matrix4x4::new(inv))
+    }
+}
+
+/// --- Display
+impl<T> fmt::Display for Matrix4x4<T>
+where
+    T: FloatingPoint + fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Matrix4x4 [")?;
+        for r in 0..4 {
+            write!(f, "  [")?;
+            for c in 0..4 {
+                if c < 3 {
+                    write!(f, "{}, ", self.data[r][c])?;
+                } else {
+                    write!(f, "{}", self.data[r][c])?;
+                }
+            }
+            writeln!(f, "],")?;
+        }
+        write!(f, "]")
+    }
+}
+
+/// --- ColumnMut view with Index/IndexMut to make columns mutable like rows
+impl<'a, T: FloatingPoint> ColumnMut<'a, T> {
+    fn new(data: &'a mut [[T; 4]; 4], col: usize) -> Self {
+        assert!(col < 4, "column index out of bounds");
+        Self { data, col }
+    }
+}
+
+impl<'a, T: FloatingPoint> Index<usize> for ColumnMut<'a, T> {
+    type Output = T;
+    fn index(&self, idx: usize) -> &Self::Output {
+        assert!(idx < 4, "index out of bounds");
+        &self.data[idx][self.col]
+    }
+}
+impl<'a, T: FloatingPoint> IndexMut<usize> for ColumnMut<'a, T> {
+    fn index_mut(&mut self, idx: usize) -> &mut Self::Output {
+        assert!(idx < 4, "index out of bounds");
+        &mut self.data[idx][self.col]
+    }
+}
+
+/// --- Algebraic traits in-place (AddAssign, SubAssign, MulAssign<T>) and Neg
+impl<T> AddAssign for Matrix4x4<T>
+where
+    T: FloatingPoint + AddAssign + Copy,
+{
+    fn add_assign(&mut self, rhs: Self) {
+        for r in 0..4 {
+            for c in 0..4 {
+                self.data[r][c] += rhs.data[r][c];
+            }
+        }
+    }
+}
+
+impl<T> SubAssign for Matrix4x4<T>
+where
+    T: FloatingPoint + SubAssign + Copy,
+{
+    fn sub_assign(&mut self, rhs: Self) {
+        for r in 0..4 {
+            for c in 0..4 {
+                self.data[r][c] -= rhs.data[r][c];
+            }
+        }
+    }
+}
+
+impl<T> MulAssign<T> for Matrix4x4<T>
+where
+    T: FloatingPoint + MulAssign + Copy,
+{
+    fn mul_assign(&mut self, rhs: T) {
+        for r in 0..4 {
+            for c in 0..4 {
+                self.data[r][c] *= rhs;
+            }
+        }
+    }
+}
+
+impl<T> Neg for Matrix4x4<T>
+where
+    T: FloatingPoint + Neg<Output = T> + Copy,
+{
+    type Output = Self;
+    fn neg(self) -> Self::Output {
+        let mut out = [[T::zero(); 4]; 4];
+        for r in 0..4 {
+            for c in 0..4 {
+                out[r][c] = -self.data[r][c];
+            }
+        }
+        Matrix4x4::new(out)
+    }
+}
+
+/// columns_mut now yields ColumnMut<'_, T>
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -738,11 +939,7 @@ mod tests {
 
     #[test]
     fn test_matrix_constructors_and_accessors() {
-        let m = Matrix3x3::from_rows(
-            [1.0f32, 2.0, 3.0],
-            [4.0, 5.0, 6.0],
-            [7.0, 8.0, 9.0],
-        );
+        let m = Matrix3x3::from_rows([1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
 
         assert_eq!(m.row(0), [1.0, 2.0, 3.0]);
         assert_eq!(m.column(1), [2.0, 5.0, 8.0]);
@@ -754,9 +951,10 @@ mod tests {
         assert_eq!(o, Matrix3x3::new([[1.0; 3]; 3]));
 
         let id = Matrix3x3::<f32>::identity();
-        assert_eq!(id, Matrix3x3::new([[1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0]]));
+        assert_eq!(
+            id,
+            Matrix3x3::new([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        );
     }
 
     #[test]
@@ -770,20 +968,14 @@ mod tests {
         let id = Matrix3x3::<f32>::identity();
         assert_eq!(
             id,
-            Matrix3x3::new([[1.0, 0.0, 0.0],
-                [0.0, 1.0, 0.0],
-                [0.0, 0.0, 1.0]])
+            Matrix3x3::new([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
         );
     }
 
     #[test]
     fn test_matrix_add_sub_mul() {
-        let a = Matrix3x3::from_rows([1.0, 2.0, 3.0],
-                                   [4.0, 5.0, 6.0],
-                                   [7.0, 8.0, 9.0]);
-        let b = Matrix3x3::from_rows([9.0, 8.0, 7.0],
-                                   [6.0, 5.0, 4.0],
-                                   [3.0, 2.0, 1.0]);
+        let a = Matrix3x3::from_rows([1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
+        let b = Matrix3x3::from_rows([9.0, 8.0, 7.0], [6.0, 5.0, 4.0], [3.0, 2.0, 1.0]);
 
         let sum = a + b;
         assert_eq!(sum.row(0), [10.0, 10.0, 10.0]);
@@ -797,11 +989,7 @@ mod tests {
 
     #[test]
     fn test_matrix_vector_mul() {
-        let m = Matrix3x3::from_rows(
-            [1.0f32, 2.0, 3.0],
-            [4.0, 5.0, 6.0],
-            [7.0, 8.0, 9.0],
-        );
+        let m = Matrix3x3::from_rows([1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
 
         let v = Vector3::new(1.0f32, 1.0f32, 1.0f32);
         let result = m * v;
@@ -812,11 +1000,7 @@ mod tests {
 
     #[test]
     fn test_vector_matrix_mul() {
-        let m = Matrix3x3::from_rows(
-            [1.0f32, 2.0, 3.0],
-            [4.0, 5.0, 6.0],
-            [7.0, 8.0, 9.0],
-        );
+        let m = Matrix3x3::from_rows([1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
 
         let v = Vector3::new(1.0f32, 1.0f32, 1.0f32);
         let result = v * m;
@@ -827,17 +1011,9 @@ mod tests {
 
     #[test]
     fn test_matrix_matrix_mul() {
-        let a = Matrix3x3::from_rows(
-            [1.0f32, 2.0, 3.0],
-            [4.0, 5.0, 6.0],
-            [7.0, 8.0, 9.0],
-        );
+        let a = Matrix3x3::from_rows([1.0f32, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]);
 
-        let b = Matrix3x3::from_rows(
-            [9.0f32, 8.0, 7.0],
-            [6.0, 5.0, 4.0],
-            [3.0, 2.0, 1.0],
-        );
+        let b = Matrix3x3::from_rows([9.0f32, 8.0, 7.0], [6.0, 5.0, 4.0], [3.0, 2.0, 1.0]);
 
         let c = a * b;
 
@@ -1028,4 +1204,122 @@ mod tests {
         assert_eq!(rows[2], [9.0, 10.0, 11.0, 12.0]);
     }
 
+    fn approx_eq<T: FloatingPoint>(a: T, b: T, eps: T) -> bool {
+        (a - b).abs() <= eps
+    }
+
+    #[test]
+    fn test_zero_and_one() {
+        let zero = Matrix4x4::<f32>::zero();
+        let one = Matrix4x4::<f32>::one();
+        assert!(zero.data.iter().all(|row| row.iter().all(|&x| x == 0.0)));
+        assert!(one.data.iter().all(|row| row.iter().all(|&x| x == 1.0)));
+    }
+
+    #[test]
+    fn test_trace() {
+        let m = Matrix4x4::from_rows(
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0, 0.0],
+            [0.0, 0.0, 3.0, 0.0],
+            [0.0, 0.0, 0.0, 4.0],
+        );
+        let trace: f32 = (0..4).map(|i| m[i][i]).sum();
+        assert_eq!(trace, 10.0);
+    }
+
+    #[test]
+    fn test_determinant_identity_and_zero() {
+        let id = Matrix4x4::<f32>::identity();
+        assert_eq!(id.determinant(), 1.0);
+
+        let zero = Matrix4x4::<f32>::zero();
+        assert_eq!(zero.determinant(), 0.0);
+    }
+
+    #[test]
+    fn test_determinant_known_matrix() {
+        let m = Matrix4x4::from_rows(
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [2.0, 6.0, 4.0, 8.0],
+            [3.0, 1.0, 1.0, 2.0],
+        );
+
+        // precomputed using numpy.linalg.det
+        let det = 72.0;
+        assert!(approx_eq(m.determinant(), det, 1e-5));
+    }
+
+    #[test]
+    fn test_transpose_invariants() {
+        let id = Matrix4x4::<f32>::identity();
+        assert_eq!(id.transpose(), id);
+
+        let m = Matrix4x4::from_rows(
+            [0.0, 1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0, 7.0],
+            [8.0, 9.0, 10.0, 11.0],
+            [12.0, 13.0, 14.0, 15.0],
+        );
+        let t = m.transpose();
+        assert_eq!(t.transpose(), m);
+    }
+
+    #[test]
+    fn test_transpose_multiplication_property() {
+        let a = Matrix4x4::from_rows(
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [9.0, 10.0, 11.0, 12.0],
+            [13.0, 14.0, 15.0, 16.0],
+        );
+        let b = Matrix4x4::from_rows(
+            [2.0, 0.0, 1.0, 0.0],
+            [0.0, 2.0, 0.0, 1.0],
+            [1.0, 0.0, 2.0, 0.0],
+            [0.0, 1.0, 0.0, 2.0],
+        );
+
+        let lhs = (a.clone() * b.clone()).transpose();
+        let rhs = b.transpose() * a.transpose();
+
+        for i in 0..4 {
+            for j in 0..4 {
+                assert!(approx_eq(lhs[i][j], rhs[i][j], 1e-5));
+            }
+        }
+    }
+
+    #[test]
+    fn test_scalar_multiplication_edge_cases() {
+        let m = Matrix4x4::<f32>::identity();
+
+        let zero_scaled = m.clone() * 0.0;
+        assert!(zero_scaled
+            .data
+            .iter()
+            .all(|row| row.iter().all(|&x| x == 0.0)));
+
+        let one_scaled = m.clone() * 1.0;
+        assert_eq!(m, one_scaled);
+    }
+
+    #[test]
+    fn test_row_column_accessors() {
+        let mut m = Matrix4x4::<f32>::identity();
+        m.set_row(0, [1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(m.row(0), [1.0, 2.0, 3.0, 4.0]);
+
+        m.set_column(1, [5.0, 6.0, 7.0, 8.0]);
+        assert_eq!(m.column(1), [5.0, 6.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn test_serialization_bincode_roundtrip() {
+        let m = Matrix4x4::<f32>::identity();
+        let encoded = bincode::serialize(&m.data).unwrap();
+        let decoded: [[f32; 4]; 4] = bincode::deserialize(&encoded).unwrap();
+        assert_eq!(decoded, m.data);
+    }
 }

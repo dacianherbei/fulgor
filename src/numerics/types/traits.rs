@@ -8,22 +8,26 @@
 ///
 /// Note: We require Copy, PartialOrd and the basic arithmetic ops on Self.
 pub trait FloatingPoint:
-Copy + PartialOrd
-+ core::ops::Add<Output = Self>
-+ core::ops::Sub<Output = Self>
-+ core::ops::Mul<Output = Self>
-+ core::ops::Div<Output = Self>
+Copy + Clone + PartialEq + PartialOrd +
+core::ops::Add<Output = Self> + core::ops::Sub<Output = Self> +
+core::ops::Mul<Output = Self> + core::ops::Div<Output = Self>
 {
     fn zero() -> Self;
     fn one() -> Self;
+    fn abs(self) -> Self;
+    fn sqrt(self) -> Self;
 }
 
 impl FloatingPoint for f32 {
     fn zero() -> Self { 0.0 }
     fn one() -> Self { 1.0 }
+    fn abs(self) -> Self { f32::abs(self) }
+    fn sqrt(self) -> Self { f32::sqrt(self) }
 }
 
 impl FloatingPoint for f64 {
     fn zero() -> Self { 0.0 }
     fn one() -> Self { 1.0 }
+    fn abs(self) -> Self { f64::abs(self) }
+    fn sqrt(self) -> Self { f64::sqrt(self) }
 }
