@@ -14,3 +14,12 @@ path = "src/lib.rs"
 serde = { version = "1.0.225", features = ["derive"] }
 bincode = "2.0.1"
 image = "0.25.8"
+
+# wgpu optional; enabled when the "gpu" feature is selected.
+wgpu = { version = "26.0.1", optional = true }
+futures = "0.3.31"
+
+[features]
+# "gpu" feature enables wgpu
+gpu = ["wgpu"]
+default = []
