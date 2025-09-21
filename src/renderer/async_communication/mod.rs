@@ -12,7 +12,7 @@ pub mod tokio_enhanced;
 
 // Re-export commonly used types for convenience
 pub use types::{AsyncChannelConfig, AsyncEventReceiver};
-pub use sender::{BufferedAsyncSender, SendEventError, TrySendEventError};
+pub use sender::{BufferedAsyncSender};
 
 #[cfg(feature = "tokio-timeout")]
 pub use tokio_enhanced::*;

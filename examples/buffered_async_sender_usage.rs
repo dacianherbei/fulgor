@@ -1,129 +1,303 @@
-//! Example demonstrating BufferedAsyncSender usage with different precision types
+//! Usage example for BufferedAsyncSender
 //!
-//! This example shows how to instantiate and use the templated BufferedAsyncSender
-//! with various number types for precision-dependent operations.
-//!
-//! To run with timeout features: cargo run --example buffered_async_sender_usage --features tokio-timeout
+//! This file would be placed in examples/buffered_async_sender_usage.rs
 
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use fulgor::renderer::prelude::*;
-use std::time::Duration;
-use fulgor::renderer::RendererEvent;
+use tokio::time::{sleep, Duration};
 
-// Simple async runtime that doesn't require tokio
-async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("fulgor BufferedAsyncSender Usage Examples");
-    println!("========================================");
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("BufferedAsyncSender Usage Example");
 
-    // Example 1: Using f64 precision (default)
-    println!("\n1. Creating BufferedAsyncSender with f64 precision:");
+    // Example 1: Bounded channel with drop_oldest_on_full = false
+    println!("\n=== Example 1: Bounded Channel (drop newest on full) ===");
+    bounded_channel_drop_newest_example().await?;
 
-    let config_f64 = AsyncChannelConfig::<f64> {
-        maximum_buffer_size: 1000,
-        send_timeout: Some(Duration::from_millis(50)),
-        enable_backpressure: false,
-        statistics_interval: Duration::from_secs(1),
-        precision_threshold: 0.001f64, // High precision threshold
-    };
+    // Example 2: Bounded channel with drop_oldest_on_full = true
+    println!("\n=== Example 2: Bounded Channel (drop oldest on full) ===");
+    bounded_channel_drop_oldest_example().await?;
 
-    let (sender_f64, mut receiver_f64) = BufferedAsyncSender::new(config_f64);
+    // Example 3: Unbounded channel
+    println!("\n=== Example 3: Unbounded Channel ===");
+    unbounded_channel_example().await?;
 
-    println!("  - Channel created with {} max buffer size",
-             sender_f64.configuration().maximum_buffer_size);
-    println!("  - Precision threshold: {}",
-             sender_f64.configuration().precision_threshold);
+    // Example 4: Integration with RendererManager
+    println!("\n=== Example 4: Integration with RendererManager ===");
+    renderer_manager_integration_example().await?;
 
-    // Example 2: Using f32 precision for performance-critical scenarios
-    println!("\n2. Creating BufferedAsyncSender with f32 precision:");
-
-    let config_f32 = AsyncChannelConfig::<f32> {
-        maximum_buffer_size: 2000,
-        send_timeout: Some(Duration::from_millis(25)),
-        enable_backpressure: true, // Enable backpressure for this example
-        statistics_interval: Duration::from_millis(500),
-        precision_threshold: 0.01f32, // Lower precision, better performance
-    };
-
-    let (sender_f32, mut receiver_f32) = BufferedAsyncSender::new(config_f32);
-
-    println!("  - Channel created with {} max buffer size",
-             sender_f32.configuration().maximum_buffer_size);
-    println!("  - Precision threshold: {}",
-             sender_f32.configuration().precision_threshold);
-    println!("  - Backpressure enabled: {}",
-             sender_f32.configuration().enable_backpressure);
-
-    // Example 3: Demonstrating mathematical operations on config
-    println!("\n3. Mathematical operations on configuration:");
-
-    let math_result_f64 = sender_f64.configuration() + 0.005f64;
-    let math_result_f32 = sender_f32.configuration() * 2.0f32;
-
-    println!("  - F64 config + 0.005 = {}", math_result_f64);
-    println!("  - F32 config * 2.0 = {}", math_result_f32);
-
-    // Example 4: Sending events
-    println!("\n4. Sending renderer events:");
-
-    // Send some events asynchronously
-    let event1 = RendererEvent::Started(RendererKind::CpuReference);
-    let event2 = RendererEvent::FrameRendered {
-        renderer_kind: RendererKind::CpuReference,
-        frame_number: 0,
-        frame_time_microseconds: 16667, // ~60 FPS
-        render_time_ns: 0,
-    };
-
-    // Send with f64 sender
-    match sender_f64.send_event(event1.clone()).await {
-        Ok(()) => println!("  - Event sent successfully via f64 sender"),
-        Err(e) => println!("  - Failed to send via f64 sender: {:?}", e),
-    }
-
-    // Try send with f32 sender (non-blocking)
-    match sender_f32.try_send_event(event2.clone()) {
-        Ok(()) => println!("  - Event sent successfully via f32 sender (try_send)"),
-        Err(e) => println!("  - Failed to try_send via f32 sender: {:?}", e),
-    }
-
-    // Example 5: Receiving events
-    println!("\n5. Receiving events:");
-
-    // Try receive from f64 receiver (non-blocking since we don't have tokio::select!)
-    match receiver_f64.try_receive_event() {
-        Ok(event) => println!("  - Received from f64 receiver: {:?}", event),
-        Err(async_channel::TryRecvError::Empty) => {
-            println!("  - F64 receiver is empty");
-        }
-        Err(e) => println!("  - Error trying to receive from f64 receiver: {:?}", e),
-    }
-
-    // Try receive from f32 receiver (non-blocking)
-    match receiver_f32.try_receive_event() {
-        Ok(event) => println!("  - Received from f32 receiver: {:?}", event),
-        Err(async_channel::TryRecvError::Empty) => {
-            println!("  - F32 receiver is empty");
-        }
-        Err(e) => println!("  - Error trying to receive from f32 receiver: {:?}", e),
-    }
-
-    // Example 6: Statistics
-    println!("\n6. Channel statistics:");
-    println!("  - F64 sender dropped events: {}", sender_f64.dropped_events_count());
-    println!("  - F64 sender pending events: {}", sender_f64.pending_events_count());
-    println!("  - F64 sender channel closed: {}", sender_f64.is_channel_closed());
-
-    println!("  - F32 sender dropped events: {}", sender_f32.dropped_events_count());
-    println!("  - F32 sender pending events: {}", sender_f32.pending_events_count());
-    println!("  - F32 sender channel closed: {}", sender_f32.is_channel_closed());
-
-    println!("  - F64 receiver received count: {}", receiver_f64.received_events_count());
-    println!("  - F32 receiver received count: {}", receiver_f32.received_events_count());
-
-    println!("\nExample completed successfully!");
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Use a simple executor from futures crate
-    futures::executor::block_on(async_main())
+async fn bounded_channel_drop_newest_example() -> Result<(), Box<dyn std::error::Error>> {
+    let (sender, mut receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(3, false,Arc::new(AtomicU64::new((0))));
+
+    println!("Created bounded channel with capacity 3, drop_newest_on_full = false");
+
+    // Send events that will fill the channel
+    for i in 0..5 {
+        let event = RendererEvent::Started(RendererKind::CpuReference);
+        sender.send_event(event).await;
+        println!("Sent event {}", i + 1);
+    }
+
+    println!("Dropped events count: {}", sender.get_dropped_count());
+
+    // Receive available events
+    let mut received_count = 0;
+    while let Ok(event) = receiver.try_recv() {
+        received_count += 1;
+        println!("Received event: {:?}", event);
+    }
+
+    println!("Total received: {}, Total dropped: {}", received_count, sender.get_dropped_count());
+
+    Ok(())
+}
+
+async fn bounded_channel_drop_oldest_example() -> Result<(), Box<dyn std::error::Error>> {
+    let (sender, mut receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(3, true,Arc::new(AtomicU64::new((0))));
+
+    println!("Created bounded channel with capacity 3, drop_oldest_on_full = true");
+
+    // Send events rapidly to test drop_oldest logic
+    for i in 0..8 {
+        let event = match i % 3 {
+            0 => RendererEvent::Started(RendererKind::CpuReference),
+            1 => RendererEvent::Stopped(RendererKind::CpuReference),
+            _ => RendererEvent::Switched(Some(RendererKind::CpuReference)),
+        };
+
+        sender.send_event(event).await;
+        println!("Sent event {} (dropped count: {})", i + 1, sender.get_dropped_count());
+
+        // Small delay to allow some processing
+        sleep(Duration::from_millis(10)).await;
+    }
+
+    println!("Final dropped events count: {}", sender.get_dropped_count());
+
+    // Receive remaining events
+    let mut received_count = 0;
+    while let Ok(event) = receiver.try_recv() {
+        received_count += 1;
+        println!("Received event: {:?}", event);
+    }
+
+    println!("Total received: {}", received_count);
+
+    Ok(())
+}
+
+async fn unbounded_channel_example() -> Result<(), Box<dyn std::error::Error>> {
+    let (sender, mut receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(Option::<usize>::Some(1));
+
+    println!("Created unbounded channel");
+
+    // Send many events rapidly
+    for i in 0..100 {
+        let event = RendererEvent::Started(RendererKind::CpuReference);
+        sender.send_event(event).await;
+
+        if i % 20 == 0 {
+            println!("Sent {} events (dropped count: {})", i + 1, sender.get_dropped_count());
+        }
+    }
+
+    println!("Final dropped events count: {}", sender.get_dropped_count());
+
+    // Receive events
+    let mut received_count = 0;
+    while let Ok(_event) = receiver.try_recv() {
+        received_count += 1;
+    }
+
+    println!("Total received: {}", received_count);
+
+    Ok(())
+}
+
+async fn renderer_manager_integration_example() -> Result<(), Box<dyn std::error::Error>> {
+    let manager = RendererManager::new();
+
+    // Subscribe using buffered async sender
+    let mut receiver = manager.subscribe_buffered_bounded(5, true);
+
+    println!("Subscribed to RendererManager with buffered async sender");
+
+    // Start and stop renderers asynchronously
+    manager.add(RendererKind::CpuReference);
+    manager.start_async(RendererKind::CpuReference).await?;
+
+    sleep(Duration::from_millis(50)).await;
+
+    manager.stop_async(RendererKind::CpuReference).await;
+
+    // Check dropped events
+    if let Some(buffered_sender) = manager.get_buffered_sender() {
+        println!("Dropped events from manager: {}", buffered_sender.get_dropped_count());
+    }
+
+    // Receive events
+    let mut received_events = Vec::new();
+    while let Ok(event) = receiver.try_recv() {
+        received_events.push(event);
+    }
+
+    println!("Received {} events from RendererManager:", received_events.len());
+    for (i, event) in received_events.iter().enumerate() {
+        println!("  {}: {:?}", i + 1, event);
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn test_send_event_bounded_channel() {
+        let (sender, mut receiver) = BufferedAsyncSender::new_bounded(2, false,Arc::new(AtomicU64::new((0))));
+
+        // Test normal sending
+        let event1 = RendererEvent::Started(RendererKind::CpuReference);
+        let event2 = RendererEvent::Stopped(RendererKind::CpuReference);
+
+        sender.send_event(event1.clone()).await;
+        sender.send_event(event2.clone()).await;
+
+        // Should receive both events
+        let received1 = timeout(Duration::from_millis(100), receiver.recv()).await.unwrap().unwrap();
+        let received2 = timeout(Duration::from_millis(100), receiver.recv()).await.unwrap().unwrap();
+
+        assert!(matches!(received1, RendererEvent::Started(_)));
+        assert!(matches!(received2, RendererEvent::Stopped(_)));
+        assert_eq!(sender.get_dropped_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_send_event_channel_overflow() {
+        let (sender, _receiver) = BufferedAsyncSender::new_bounded(2, false,Arc::new(AtomicU64::new((0))));
+
+        // Fill the channel beyond capacity
+        for i in 0..4 {
+            let event = RendererEvent::Started(RendererKind::CpuReference);
+            sender.send_event(event).await;
+        }
+
+        // Should have dropped events
+        assert!(sender.get_dropped_count() > 0);
+    }
+
+    #[tokio::test]
+    async fn test_send_event_unbounded_channel() {
+        let (sender, mut receiver) = BufferedAsyncSender::new_unbounded(Option::<usize>::Some(1));
+
+        // Send multiple events
+        for i in 0..10 {
+            let event = RendererEvent::Started(RendererKind::CpuReference);
+            sender.send_event(event).await;
+        }
+
+        // Should not drop any events
+        assert_eq!(sender.get_dropped_count(), 0);
+
+        // Should be able to receive all events
+        let mut received_count = 0;
+        while receiver.try_recv().is_ok() {
+            received_count += 1;
+        }
+        assert_eq!(received_count, 10);
+    }
+
+    #[tokio::test]
+    async fn test_drop_oldest_on_full_logic() {
+        let (sender, mut receiver) = BufferedAsyncSender::new_bounded(3, true, Arc::new(AtomicU64::new((0))));
+
+        // Send more events than capacity
+        for i in 0..6 {
+            let event = RendererEvent::Started(RendererKind::CpuReference);
+            sender.send_event(event).await;
+        }
+
+        // Give some time for async processing
+        sleep(Duration::from_millis(50)).await;
+
+        // Should have dropped some events due to overflow
+        assert!(sender.get_dropped_count() > 0);
+    }
+}
+
+/// Benchmark for performance testing
+#[cfg(test)]
+mod benchmarks {
+    use super::*;
+    use std::time::Instant;
+
+    #[tokio::test]
+    async fn benchmark_bounded_channel_throughput() {
+        let (sender, mut receiver) = BufferedAsyncSender::new_bounded(1000, true, Arc::new(AtomicU64::new((0))));
+        let event_count = 10000;
+
+        let start = Instant::now();
+
+        // Send events
+        for i in 0..event_count {
+            let event = RendererEvent::Started(RendererKind::CpuReference);
+            sender.send_event(event).await;
+        }
+
+        let send_duration = start.elapsed();
+
+        // Receive events
+        let mut received_count = 0;
+        while receiver.try_recv().is_ok() {
+            received_count += 1;
+        }
+
+        let total_duration = start.elapsed();
+
+        println!("Benchmark Results:");
+        println!("  Events sent: {}", event_count);
+        println!("  Events received: {}", received_count);
+        println!("  Events dropped: {}", sender.get_dropped_count());
+        println!("  Send duration: {:?}", send_duration);
+        println!("  Total duration: {:?}", total_duration);
+        println!("  Throughput: {:.2} events/ms", event_count as f64 / send_duration.as_millis() as f64);
+    }
+
+    #[tokio::test]
+    async fn benchmark_unbounded_channel_throughput() {
+        let (sender, mut receiver) = BufferedAsyncSender::new_unbounded(Option::<usize>::Some(1));
+        let event_count = 10000;
+
+        let start = Instant::now();
+
+        // Send events
+        for i in 0..event_count {
+            let event = RendererEvent::Started(RendererKind::CpuReference);
+            sender.send_event(event).await;
+        }
+
+        let send_duration = start.elapsed();
+
+        // Receive events
+        let mut received_count = 0;
+        while receiver.try_recv().is_ok() {
+            received_count += 1;
+        }
+
+        let total_duration = start.elapsed();
+
+        println!("Unbounded Benchmark Results:");
+        println!("  Events sent: {}", event_count);
+        println!("  Events received: {}", received_count);
+        println!("  Events dropped: {}", sender.get_dropped_count());
+        println!("  Send duration: {:?}", send_duration);
+        println!("  Total duration: {:?}", total_duration);
+        println!("  Throughput: {:.2} events/ms", event_count as f64 / send_duration.as_millis() as f64);
+    }
 }
