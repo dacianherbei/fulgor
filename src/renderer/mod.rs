@@ -8,9 +8,9 @@ pub mod prelude;
 pub mod async_communication;
 
 use crate::renderer::cpu_reference::CpuReferenceRenderer;
-use crate::renderer::gpu_optional::GpuOptionalRenderer;
 use std::collections::HashMap;
 use std::sync::{mpsc, Arc, Mutex};
+pub use crate::renderer::async_communication::sender::BufferedAsyncSender;
 
 /// Core trait for all rendering implementations in the fulgor library.
 ///
@@ -21,66 +21,9 @@ use std::sync::{mpsc, Arc, Mutex};
 /// The trait requires `Send + Sync` to ensure thread safety across
 /// different rendering contexts and multi-threaded applications.
 pub trait Renderer: Send + Sync {
-    /// Initialize the renderer and prepare it for rendering operations.
-    ///
-    /// This method should set up any necessary resources, contexts,
-    /// or state required for the rendering pipeline.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` on successful initialization, or `Err(String)`
-    /// with an error description if initialization fails.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// let mut renderer = SomeRenderer::new();
-    /// renderer.start()?;
-    /// ```
     fn start(&mut self) -> Result<(), String>;
-
-    /// Stop the renderer and clean up any allocated resources.
-    ///
-    /// This method should gracefully shut down the renderer,
-    /// release any held resources, and prepare for destruction.
-    /// Unlike `start()`, this method does not return an error
-    /// as cleanup should be best-effort.
     fn stop(&mut self);
-
-    /// Render a single frame using the current renderer state.
-    ///
-    /// This method performs the actual rendering work for one frame.
-    /// The specific rendering algorithm and output depend on the
-    /// concrete implementation.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` on successful frame rendering, or `Err(String)`
-    /// with an error description if rendering fails.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// loop {
-    ///     renderer.render_frame()?;
-    /// }
-    /// ```
     fn render_frame(&mut self) -> Result<(), String>;
-
-    /// Get the human-readable name of this renderer implementation.
-    ///
-    /// This method returns a static string that identifies the
-    /// specific renderer type or backend being used.
-    ///
-    /// # Returns
-    ///
-    /// A static string slice containing the renderer name.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// println!("Using renderer: {}", renderer.name());
-    /// ```
     fn name(&self) -> &'static str;
 }
 
@@ -157,6 +100,8 @@ struct RendererManagerInner {
     active: Option<RendererKind>,
     sender: Option<mpsc::Sender<RendererEvent>>,
     async_sinks: Vec<Arc<Mutex<Vec<RendererEvent>>>>,
+    // New field for async buffered sender
+    buffered_async_sender: Option<BufferedAsyncSender<RendererEvent>>,
 }
 
 /// Thread-safe manager handle.
@@ -173,6 +118,7 @@ impl RendererManager {
                 active: None,
                 sender: None,
                 async_sinks: Vec::new(),
+                buffered_async_sender: None,
             })),
         }
     }
@@ -195,6 +141,54 @@ impl RendererManager {
         RendererEventStream { buffer: sink }
     }
 
+    /// Subscribe using BufferedAsyncSender with bounded channel.
+    pub fn subscribe_buffered_bounded(
+        &self,
+        capacity: usize,
+        drop_oldest_on_full: bool
+    ) -> tokio::sync::mpsc::Receiver<RendererEvent> {
+        let (buffered_sender, receiver) = BufferedAsyncSender::new_bounded(capacity, drop_oldest_on_full);
+        let mut inner = self.inner.lock().unwrap();
+        inner.buffered_async_sender = Some(buffered_sender);
+        receiver
+    }
+
+    /// Subscribe using BufferedAsyncSender with unbounded channel.
+    pub fn subscribe_buffered_unbounded(&self) -> tokio::sync::mpsc::UnboundedReceiver<RendererEvent> {
+        let (buffered_sender, receiver) = BufferedAsyncSender::new_unbounded();
+        let mut inner = self.inner.lock().unwrap();
+        inner.buffered_async_sender = Some(buffered_sender);
+        receiver
+    }
+
+    /// Get the current BufferedAsyncSender if available.
+    pub fn get_buffered_sender(&self) -> Option<BufferedAsyncSender<RendererEvent>> {
+        let inner = self.inner.lock().unwrap();
+        inner.buffered_async_sender.clone()
+    }
+
+    /// Notify all subscribers including the buffered async sender.
+    async fn notify_async(&self, event: RendererEvent) {
+        let mut inner = self.inner.lock().unwrap();
+
+        // Sync
+        if let Some(sender) = &inner.sender {
+            let _ = sender.send(event.clone());
+        }
+
+        // Async sinks
+        for sink in &inner.async_sinks {
+            sink.lock().unwrap().push(event.clone());
+        }
+
+        // Buffered async sender
+        if let Some(buffered_sender) = &inner.buffered_async_sender {
+            let sender = buffered_sender.clone();
+            drop(inner); // Release lock before awaiting
+            sender.send_event(event).await;
+        }
+    }
+
     fn notify(&self, event: RendererEvent) {
         let mut inner = self.inner.lock().unwrap();
         // Sync
@@ -212,6 +206,27 @@ impl RendererManager {
         inner.renderers.entry(kind).or_insert_with(|| kind.create());
     }
 
+    pub async fn start_async(&self, kind: RendererKind) -> Result<(), String> {
+        let result = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.renderers.entry(kind).or_insert_with(|| kind.create());
+            if let Some(renderer) = inner.renderers.get_mut(&kind) {
+                renderer.start()?;
+                inner.active = Some(kind);
+                Ok(())
+            } else {
+                Err(format!("Renderer {:?} not found", kind))
+            }
+        };
+
+        if result.is_ok() {
+            self.notify_async(RendererEvent::Started(kind)).await;
+            self.notify_async(RendererEvent::Switched(Some(kind))).await;
+        }
+
+        result
+    }
+
     pub fn start(&self, kind: RendererKind) -> Result<(), String> {
         let mut inner = self.inner.lock().unwrap();
         inner.renderers.entry(kind).or_insert_with(|| kind.create());
@@ -224,6 +239,30 @@ impl RendererManager {
             Ok(())
         } else {
             Err(format!("Renderer {:?} not found", kind))
+        }
+    }
+
+    pub async fn stop_async(&self, kind: RendererKind) {
+        let (was_active, stopped) = {
+            let mut inner = self.inner.lock().unwrap();
+            let stopped = if let Some(renderer) = inner.renderers.get_mut(&kind) {
+                renderer.stop();
+                true
+            } else {
+                false
+            };
+            let was_active = inner.active == Some(kind);
+            if was_active {
+                inner.active = None;
+            }
+            (was_active, stopped)
+        };
+
+        if stopped {
+            self.notify_async(RendererEvent::Stopped(kind)).await;
+            if was_active {
+                self.notify_async(RendererEvent::Switched(None)).await;
+            }
         }
     }
 
@@ -248,25 +287,32 @@ impl RendererManager {
         match inner.active {
             Some(kind) => {
                 if let Some(renderer) = inner.renderers.get_mut(&kind) {
-                    let start_time = std::time::Instant::now();
-                    let result = renderer.render_frame();
-                    let elapsed = start_time.elapsed();
-
-                    drop(inner);
-                    self.notify(RendererEvent::FrameRendered {
-                        renderer_kind: kind,
-                        frame_number: 0, // TODO: add retrieve and set of frame number provided by renderer
-                        frame_time_microseconds: 0, // TODO: set time of event emition
-                        render_time_ns: elapsed.as_nanos() as u64,
-                    });
-
-                    result
+                    renderer.render_frame()
                 } else {
                     Err("Active renderer not found".into())
                 }
             }
             None => Err("No active renderer".into()),
         }
+    }
+
+    pub async fn switch_async(&self, kind: RendererKind) -> Result<(), String> {
+        {
+            let mut inner = self.inner.lock().unwrap();
+            if let Some(active) = inner.active {
+                if active == kind {
+                    return Ok(()); // already active
+                }
+                if let Some(renderer) = inner.renderers.get_mut(&active) {
+                    renderer.stop();
+                }
+                inner.active = None;
+            }
+        }
+
+        self.notify_async(RendererEvent::Stopped(kind)).await;
+        self.notify_async(RendererEvent::Switched(None)).await;
+        self.start_async(kind).await
     }
 
     pub fn switch(&self, kind: RendererKind) -> Result<(), String> {
@@ -286,6 +332,23 @@ impl RendererManager {
             }
         }
         self.start(kind)
+    }
+
+    pub async fn stop_all_async(&self) {
+        let renderer_kinds: Vec<RendererKind> = {
+            let mut inner = self.inner.lock().unwrap();
+            let kinds: Vec<_> = inner.renderers.keys().cloned().collect();
+            for (_, renderer) in inner.renderers.iter_mut() {
+                renderer.stop();
+            }
+            inner.active = None;
+            kinds
+        };
+
+        for kind in renderer_kinds {
+            self.notify_async(RendererEvent::Stopped(kind)).await;
+        }
+        self.notify_async(RendererEvent::Switched(None)).await;
     }
 
     pub fn stop_all(&self) {

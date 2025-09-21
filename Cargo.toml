@@ -24,13 +24,15 @@ async-channel = "2.5.0"
 [features]
 # "gpu" feature enables wgpu
 gpu = ["wgpu"]
-default = []
+default = ["tokio-support"]
 async = ["tokio"]
 tokio-runtime = ["tokio"]
 tokio-timeout = ["tokio"]
+tokio-support = ["tokio"]
 
 [dev-dependencies]
 tokio = { version = "1.47.1", features = ["full"] }
+tokio-test = "0.4"
 
 [[example]]
 name = "async_channel_usage"
