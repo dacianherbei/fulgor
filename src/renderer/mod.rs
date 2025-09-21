@@ -5,21 +5,125 @@
 pub mod cpu_reference;
 pub mod gpu_optional;
 pub mod prelude;
+pub mod async_communication;
 
 use crate::renderer::cpu_reference::CpuReferenceRenderer;
 use crate::renderer::gpu_optional::GpuOptionalRenderer;
 use std::collections::HashMap;
 use std::sync::{mpsc, Arc, Mutex};
 
-/// Trait that all renderers implement.
+/// Core trait for all rendering implementations in the fulgor library.
 ///
-/// The `Send + Sync` bounds allow them to be passed between threads or
-/// shared across concurrency contexts safely.
+/// This trait provides a common interface for different rendering backends
+/// such as software renderers, GPU-based renderers, or specialized
+/// Gaussian splatting implementations.
+///
+/// The trait requires `Send + Sync` to ensure thread safety across
+/// different rendering contexts and multi-threaded applications.
 pub trait Renderer: Send + Sync {
+    /// Initialize the renderer and prepare it for rendering operations.
+    ///
+    /// This method should set up any necessary resources, contexts,
+    /// or state required for the rendering pipeline.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful initialization, or `Err(String)`
+    /// with an error description if initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// let mut renderer = SomeRenderer::new();
+    /// renderer.start()?;
+    /// ```
     fn start(&mut self) -> Result<(), String>;
+
+    /// Stop the renderer and clean up any allocated resources.
+    ///
+    /// This method should gracefully shut down the renderer,
+    /// release any held resources, and prepare for destruction.
+    /// Unlike `start()`, this method does not return an error
+    /// as cleanup should be best-effort.
     fn stop(&mut self);
+
+    /// Render a single frame using the current renderer state.
+    ///
+    /// This method performs the actual rendering work for one frame.
+    /// The specific rendering algorithm and output depend on the
+    /// concrete implementation.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful frame rendering, or `Err(String)`
+    /// with an error description if rendering fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// loop {
+    ///     renderer.render_frame()?;
+    /// }
+    /// ```
     fn render_frame(&mut self) -> Result<(), String>;
+
+    /// Get the human-readable name of this renderer implementation.
+    ///
+    /// This method returns a static string that identifies the
+    /// specific renderer type or backend being used.
+    ///
+    /// # Returns
+    ///
+    /// A static string slice containing the renderer name.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// println!("Using renderer: {}", renderer.name());
+    /// ```
     fn name(&self) -> &'static str;
+}
+
+/// Events emitted by renderer components in the fulgor engine.
+///
+/// These events represent significant state changes in the rendering system
+/// and can be used for monitoring, debugging, and coordinating between
+/// different parts of the application.
+#[derive(Debug, Clone)]
+pub enum RendererEvent {
+    /// A renderer backend has been started.
+    ///
+    /// Emitted when a specific renderer backend successfully initializes
+    /// and begins its rendering loop.
+    Started(RendererKind),
+
+    /// A renderer backend has been stopped.
+    ///
+    /// Emitted when a specific renderer backend has been shut down,
+    /// either gracefully or due to an error condition.
+    Stopped(RendererKind),
+
+    ShutdownRequested,
+
+    /// The active renderer has been switched.
+    ///
+    /// Emitted when the rendering system switches from one backend to another.
+    /// The `Option<RendererKind>` represents the new active renderer:
+    /// - `Some(RendererKind)` indicates a switch to the specified backend
+    /// - `None` indicates no renderer is currently active
+    Switched(Option<RendererKind>),
+    ViewportResized { width: u32, height: u32 },
+    SplatDataUpdated { splat_count: usize },
+    FrameRendered {
+        renderer_kind: RendererKind,
+        frame_number: u64,
+        frame_time_microseconds: u64,
+        render_time_ns: u64
+    },
+    Error {
+        renderer_kind: Option<RendererKind>,
+        message: String,
+    },
 }
 
 /// Kinds of renderer backends available in fulgor.
@@ -45,14 +149,6 @@ impl RendererKind {
             RendererKind::GpuOptional => Box::new(GpuOptionalRenderer::new()),
         }
     }
-}
-
-/// Events emitted by RendererManager.
-#[derive(Debug, Clone)]
-pub enum RendererEvent {
-    Started(RendererKind),
-    Stopped(RendererKind),
-    Switched(Option<RendererKind>), // None means no active renderer
 }
 
 /// Internal state of the manager.
@@ -152,7 +248,19 @@ impl RendererManager {
         match inner.active {
             Some(kind) => {
                 if let Some(renderer) = inner.renderers.get_mut(&kind) {
-                    renderer.render_frame()
+                    let start_time = std::time::Instant::now();
+                    let result = renderer.render_frame();
+                    let elapsed = start_time.elapsed();
+
+                    drop(inner);
+                    self.notify(RendererEvent::FrameRendered {
+                        renderer_kind: kind,
+                        frame_number: 0, // TODO: add retrieve and set of frame number provided by renderer
+                        frame_time_microseconds: 0, // TODO: set time of event emition
+                        render_time_ns: elapsed.as_nanos() as u64,
+                    });
+
+                    result
                 } else {
                     Err("Active renderer not found".into())
                 }
