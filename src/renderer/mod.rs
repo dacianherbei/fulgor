@@ -16,7 +16,7 @@ use std::fmt;
 use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::AtomicU64;
 pub use crate::renderer::async_communication::sender::BufferedAsyncSender;
-pub use factory::RendererInfo;
+pub use factory::{RendererInfo, RendererFactory, MockRenderer, MockRendererFactory};
 
 /// Core trait for all rendering implementations in the fulgor library.
 ///

@@ -1,5 +1,7 @@
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::fmt::Debug;
+use crate::renderer::{DataPrecision, RendererError};
 
 /// Information about a registered renderer in the factory system.
 ///
@@ -86,8 +88,213 @@ impl RendererInfo {
     }
 }
 
+/// Simple mock Renderer trait for testing the factory system
+///
+/// This is a simplified version of the main Renderer trait, focused on
+/// the basic lifecycle methods needed for factory testing.
+pub trait Renderer: Send + Sync + Debug + Any {
+    /// Start the renderer
+    fn start(&mut self) -> Result<(), String>;
+
+    /// Stop the renderer
+    fn stop(&mut self);
+
+    /// Get the renderer's name
+    fn name(&self) -> &'static str;
+}
+
+/// Factory trait for creating renderer instances
+///
+/// This trait provides a unified interface for creating different types of renderers
+/// with configurable precision and parameters. Implementations should be thread-safe
+/// and support concurrent creation of multiple renderer instances.
+pub trait RendererFactory: Send + Sync + Any {
+    /// Create a new renderer instance with the specified precision and parameters
+    ///
+    /// # Arguments
+    /// * `precision` - The data precision to use for rendering calculations
+    /// * `parameters` - Factory-specific configuration parameters as a string
+    ///
+    /// # Returns
+    /// A boxed renderer instance or an error if creation failed
+    fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError>;
+
+    /// Get information about this renderer factory
+    ///
+    /// # Returns
+    /// RendererInfo describing the capabilities and requirements of this factory
+    fn get_info(&self) -> RendererInfo;
+
+    /// Validate parameters without creating a renderer instance
+    ///
+    /// This method allows checking if parameters are valid before attempting
+    /// to create an expensive renderer instance. The default implementation
+    /// always returns Ok(()), but factories should override this for proper validation.
+    ///
+    /// # Arguments
+    /// * `precision` - The data precision to validate against
+    /// * `parameters` - The parameters string to validate
+    ///
+    /// # Returns
+    /// Ok(()) if parameters are valid, or a RendererError describing the issue
+    fn validate_parameters(&self, _precision: DataPrecision, _parameters: &str) -> Result<(), RendererError> {
+        Ok(())
+    }
+}
+
+/// Mock renderer implementation for testing
+#[derive(Debug)]
+pub struct MockRenderer {
+    name: &'static str,
+    started: bool,
+    precision: DataPrecision,
+}
+
+impl MockRenderer {
+    pub fn new(name: &'static str, precision: DataPrecision) -> Self {
+        Self {
+            name,
+            started: false,
+            precision,
+        }
+    }
+
+    pub fn precision(&self) -> DataPrecision {
+        self.precision
+    }
+
+    pub fn is_started(&self) -> bool {
+        self.started
+    }
+}
+
+impl Renderer for MockRenderer {
+    fn start(&mut self) -> Result<(), String> {
+        if self.started {
+            Err("Renderer is already started".to_string())
+        } else {
+            self.started = true;
+            Ok(())
+        }
+    }
+
+    fn stop(&mut self) {
+        self.started = false;
+    }
+
+    fn name(&self) -> &'static str {
+        self.name
+    }
+}
+
+/// Simple example factory implementation for testing
+#[derive(Debug)]
+pub struct MockRendererFactory {
+    factory_name: String,
+    supported_precisions: Vec<DataPrecision>,
+    capabilities: String,
+    timeout_microseconds: u64,
+}
+
+impl MockRendererFactory {
+    pub fn new(factory_name: impl Into<String>) -> Self {
+        Self {
+            factory_name: factory_name.into(),
+            supported_precisions: vec![DataPrecision::F32, DataPrecision::F64],
+            capabilities: "testing,mock,basic_rendering".to_string(),
+            timeout_microseconds: 5000,
+        }
+    }
+
+    pub fn new_with_precisions(
+        factory_name: impl Into<String>,
+        supported_precisions: Vec<DataPrecision>
+    ) -> Self {
+        Self {
+            factory_name: factory_name.into(),
+            supported_precisions,
+            capabilities: "testing,mock,configurable_precision".to_string(),
+            timeout_microseconds: 3000,
+        }
+    }
+
+    pub fn new_full(
+        factory_name: impl Into<String>,
+        supported_precisions: Vec<DataPrecision>,
+        capabilities: impl Into<String>,
+        timeout_microseconds: u64,
+    ) -> Self {
+        Self {
+            factory_name: factory_name.into(),
+            supported_precisions,
+            capabilities: capabilities.into(),
+            timeout_microseconds,
+        }
+    }
+}
+
+impl RendererFactory for MockRendererFactory {
+    fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
+        // Validate precision support
+        if !self.supported_precisions.contains(&precision) {
+            return Err(RendererError::UnsupportedPrecision(precision));
+        }
+
+        // Validate parameters first
+        self.validate_parameters(precision, parameters)?;
+
+        // Create the mock renderer
+        let renderer_name = if parameters.contains("custom_name=") {
+            "CustomMock"
+        } else {
+            "Mock"
+        };
+
+        Ok(Box::new(MockRenderer::new(renderer_name, precision)))
+    }
+
+    fn get_info(&self) -> RendererInfo {
+        let mut parameters = HashMap::new();
+        parameters.insert("custom_name".to_string(), "Set to 'true' to use CustomMock renderer name".to_string());
+        parameters.insert("test_mode".to_string(), "Enable test mode for debugging".to_string());
+
+        RendererInfo::new(
+            self.factory_name.clone(),
+            self.capabilities.clone(),
+            parameters,
+            self.timeout_microseconds,
+        )
+    }
+
+    fn validate_parameters(&self, _precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
+        // Simple parameter validation
+        if parameters.contains("invalid") {
+            return Err(RendererError::InvalidParameters(
+                "Parameters cannot contain 'invalid'".to_string()
+            ));
+        }
+
+        if parameters.len() > 100 {
+            return Err(RendererError::InvalidParameters(
+                "Parameters too long (max 100 characters)".to_string()
+            ));
+        }
+
+        // Validate specific parameter formats
+        if parameters.contains("custom_name=") && !parameters.contains("custom_name=true") {
+            return Err(RendererError::InvalidParameters(
+                "custom_name parameter must be 'true' if specified".to_string()
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     use super::*;
     use std::any::TypeId;
 
@@ -284,5 +491,200 @@ mod tests {
         assert_eq!(caps3.len(), 2);
         assert!(caps3.contains(&"cap1"));
         assert!(caps3.contains(&"cap2"));
+    }
+    #[test]
+    fn test_mock_renderer() {
+        let mut renderer = MockRenderer::new("TestMock", DataPrecision::F32);
+
+        assert_eq!(renderer.name(), "TestMock");
+        assert_eq!(renderer.precision(), DataPrecision::F32);
+        assert!(!renderer.is_started());
+
+        // Test starting
+        assert!(renderer.start().is_ok());
+        assert!(renderer.is_started());
+
+        // Test double start fails
+        assert!(renderer.start().is_err());
+
+        // Test stopping
+        renderer.stop();
+        assert!(!renderer.is_started());
+    }
+
+    #[test]
+    fn test_mock_factory_creation() {
+        let factory = MockRendererFactory::new("TestFactory");
+        let info = factory.get_info();
+
+        assert_eq!(info.name, "TestFactory");
+        assert_eq!(info.timeout_microseconds, 5000);
+        assert!(info.has_capability("testing"));
+        assert!(info.has_capability("mock"));
+        assert!(info.has_capability("basic_rendering"));
+        assert!(!info.has_capability("gpu_acceleration"));
+    }
+
+    #[test]
+    fn test_factory_create_renderer() {
+        let factory = MockRendererFactory::new("TestFactory");
+
+        // Test successful creation
+        let renderer = factory.create(DataPrecision::F32, "test_params");
+        assert!(renderer.is_ok());
+        let renderer = renderer.unwrap();
+        assert_eq!(renderer.name(), "Mock");
+
+        // Test custom name parameter
+        let renderer = factory.create(DataPrecision::F64, "custom_name=true");
+        assert!(renderer.is_ok());
+        let renderer = renderer.unwrap();
+        assert_eq!(renderer.name(), "CustomMock");
+    }
+
+    #[test]
+    fn test_factory_unsupported_precision() {
+        let factory = MockRendererFactory::new_with_precisions(
+            "LimitedFactory",
+            vec![DataPrecision::F32]
+        );
+
+        // Should succeed for supported precision
+        let result = factory.create(DataPrecision::F32, "test");
+        assert!(result.is_ok());
+
+        // Should fail for unsupported precision
+        let result = factory.create(DataPrecision::F64, "test");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            RendererError::UnsupportedPrecision(DataPrecision::F64) => {},
+            _ => panic!("Expected UnsupportedPrecision error"),
+        }
+
+        // Test BFloat16 and F16 support
+        let advanced_factory = MockRendererFactory::new_with_precisions(
+            "AdvancedFactory",
+            vec![DataPrecision::F16, DataPrecision::BFloat16]
+        );
+
+        assert!(advanced_factory.create(DataPrecision::F16, "").is_ok());
+        assert!(advanced_factory.create(DataPrecision::BFloat16, "").is_ok());
+        assert!(advanced_factory.create(DataPrecision::F32, "").is_err());
+    }
+
+    #[test]
+    fn test_parameter_validation() {
+        let factory = MockRendererFactory::new("TestFactory");
+
+        // Valid parameters
+        assert!(factory.validate_parameters(DataPrecision::F32, "valid_params").is_ok());
+        assert!(factory.validate_parameters(DataPrecision::F32, "custom_name=true").is_ok());
+        assert!(factory.validate_parameters(DataPrecision::F32, "test_mode=debug").is_ok());
+
+        // Invalid parameters
+        let result = factory.validate_parameters(DataPrecision::F32, "invalid_params");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            RendererError::InvalidParameters(_) => {},
+            _ => panic!("Expected InvalidParameters error"),
+        }
+
+        // Too long parameters
+        let long_params = "a".repeat(101);
+        let result = factory.validate_parameters(DataPrecision::F32, &long_params);
+        assert!(result.is_err());
+
+        // Invalid custom_name format
+        let result = factory.validate_parameters(DataPrecision::F32, "custom_name=false");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_factory_type_id() {
+        let factory1 = MockRendererFactory::new("Factory1");
+        let factory2 = MockRendererFactory::new("Factory2");
+
+        // Same type should have same TypeId
+        assert_eq!(factory1.type_id(), factory2.type_id());
+        assert_eq!(factory1.type_id(), TypeId::of::<MockRendererFactory>());
+    }
+
+    #[test]
+    fn test_trait_send_sync() {
+        // Test that our types implement Send + Sync
+        fn assert_send_sync<T: Send + Sync>() {}
+
+        assert_send_sync::<MockRendererFactory>();
+        assert_send_sync::<Box<dyn RendererFactory>>();
+        assert_send_sync::<Box<dyn Renderer>>();
+    }
+
+    #[test]
+    fn test_renderer_info_integration() {
+        let factory = MockRendererFactory::new_full(
+            "AdvancedRenderer",
+            vec![DataPrecision::F32, DataPrecision::F64, DataPrecision::F16],
+            "3d_rendering,gaussian_splatting,real_time,gpu_accelerated",
+            2000
+        );
+
+        let info = factory.get_info();
+        assert_eq!(info.name, "AdvancedRenderer");
+        assert_eq!(info.timeout_microseconds, 2000);
+
+        // Test capabilities
+        assert!(info.has_capability("3d_rendering"));
+        assert!(info.has_capability("gaussian_splatting"));
+        assert!(info.has_capability("real_time"));
+        assert!(info.has_capability("gpu_accelerated"));
+        assert!(!info.has_capability("cpu_only"));
+
+        // Test parameters
+        assert!(info.has_parameter("custom_name"));
+        assert!(info.has_parameter("test_mode"));
+        assert!(!info.has_parameter("nonexistent"));
+
+        // Test parameter descriptions
+        assert!(info.get_parameter_description("custom_name").is_some());
+        assert!(info.get_parameter_description("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_all_data_precision_variants() {
+        let factory = MockRendererFactory::new_with_precisions(
+            "FullPrecisionFactory",
+            vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::F64, DataPrecision::BFloat16]
+        );
+
+        // Test all precision variants
+        assert!(factory.create(DataPrecision::F16, "").is_ok());
+        assert!(factory.create(DataPrecision::F32, "").is_ok());
+        assert!(factory.create(DataPrecision::F64, "").is_ok());
+        assert!(factory.create(DataPrecision::BFloat16, "").is_ok());
+
+        // Verify the precision is preserved in created renderers
+        let renderer_f16 = factory.create(DataPrecision::F16, "").unwrap();
+        let any_ref = renderer_f16.as_ref() as &dyn Any;
+        if let Some(mock) = any_ref.downcast_ref::<MockRenderer>() {
+            assert_eq!(mock.precision(), DataPrecision::F16);
+        } else {
+            panic!("Failed to downcast to MockRenderer");
+        }
+    }
+
+    #[test]
+    fn test_error_propagation() {
+        let factory = MockRendererFactory::new("TestFactory");
+
+        // Test that validation errors are propagated during creation
+        let result = factory.create(DataPrecision::F32, "invalid_test");
+        assert!(result.is_err());
+
+        // Test that the error message is preserved
+        if let Err(RendererError::InvalidParameters(msg)) = result {
+            assert!(msg.contains("invalid"));
+        } else {
+            panic!("Expected InvalidParameters error with preserved message");
+        }
     }
 }
