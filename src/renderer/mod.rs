@@ -85,7 +85,7 @@ pub enum RendererKind {
 
 impl RendererKind {
     pub fn all() -> Vec<Self> {
-        let kinds = vec![RendererKind::CpuReference];
+        let mut kinds = vec![RendererKind::CpuReference];
         #[cfg(feature = "gpu")]
         kinds.push(RendererKind::GpuOptional);
         kinds
@@ -93,7 +93,8 @@ impl RendererKind {
 
     pub fn create(self) -> Box<dyn Renderer + Send + Sync> {
         match self {
-            RendererKind::CpuReference => Box::new(CpuReferenceRenderer::new()),
+            // Fix: Explicitly specify f32 as the NumberType parameter
+            RendererKind::CpuReference => Box::new(CpuReferenceRenderer::<f32>::new()),
             #[cfg(feature = "gpu")]
             RendererKind::GpuOptional => Box::new(GpuOptionalRenderer::new()),
         }
