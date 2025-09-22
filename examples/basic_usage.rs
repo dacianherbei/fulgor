@@ -1,42 +1,66 @@
 //! Basic usage example for AsyncEventReceiver
 //!
 //! This example demonstrates how to use the AsyncEventReceiver with
-//! different event types, showing the template flexibility.
+//! different event types and configurations, showing the template flexibility.
 
 use fulgor::renderer::{RendererEvent, RendererKind};
+use fulgor::{AsyncEventReceiver, AsyncChannelConfig};
 use async_channel;
+use futures::StreamExt;
 use std::time::Duration;
-use fulgor::AsyncEventReceiver;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Fulgor AsyncEventReceiver Example");
     println!("=================================");
 
-    // Example 1: Using with the built-in RendererEvent type
+    // Example 1: Using with the built-in RendererEvent type and default f64 precision
     await_renderer_events_example().await?;
 
-    // Example 2: Using with a custom event type
+    // Example 2: Using with a custom event type and f32 precision
     await_custom_events_example().await?;
+
+    // Example 3: Demonstrating Stream interface
+    await_stream_interface_example().await?;
+
+    // Example 4: Configuration showcase
+    await_configuration_showcase().await?;
 
     println!("All examples completed successfully!");
     Ok(())
 }
 
-/// Demonstrates usage with the built-in RendererEvent type
+/// Demonstrates usage with the built-in RendererEvent type and high-throughput configuration
 async fn await_renderer_events_example() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n--- Renderer Events Example ---");
+    println!("\n--- Renderer Events Example (High-Throughput Config) ---");
+
+    // Create a high-throughput configuration optimized for rendering workloads
+    let config = AsyncChannelConfig::<f64>::high_throughput(0.001);
+    println!("Using config - Buffer: {}, Backpressure: {}, Precision: {}",
+             config.maximum_buffer_size,
+             config.has_backpressure(),
+             config.precision_threshold());
 
     // Create an unbounded channel for RendererEvent
     let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
-    let event_receiver = AsyncEventReceiver::new(receiver);
+    let event_receiver = AsyncEventReceiver::new(receiver, config);
 
     // Send some example events
     let events = vec![
         RendererEvent::ViewportResized { width: 1920, height: 1080 },
         RendererEvent::SplatDataUpdated { splat_count: 150000 },
-        RendererEvent::FrameRendered { renderer_kind: RendererKind::CpuReference, frame_number: 1, frame_time_microseconds: 0, render_time_ns: 1667 },
-        RendererEvent::FrameRendered { renderer_kind: RendererKind::CpuReference, frame_number: 2, frame_time_microseconds: 0, render_time_ns: 1532 },
+        RendererEvent::FrameRendered {
+            renderer_kind: RendererKind::CpuReference,
+            frame_number: 1,
+            frame_time_microseconds: 0,
+            render_time_ns: 1667
+        },
+        RendererEvent::FrameRendered {
+            renderer_kind: RendererKind::CpuReference,
+            frame_number: 2,
+            frame_time_microseconds: 0,
+            render_time_ns: 1532
+        },
     ];
 
     // Send events in a separate task
@@ -61,12 +85,12 @@ async fn await_renderer_events_example() -> Result<(), Box<dyn std::error::Error
                  event_receiver.is_closed());
 
         // Try to receive an event
-        match event_receiver.recv().await {
+        match event_receiver.receive_event().await {
             Ok(event) => {
                 match event {
                     RendererEvent::FrameRendered { frame_number, render_time_ns, .. } => {
                         frame_count += 1;
-                        println!("  Processed frame {} in {:.2}ms", frame_number, render_time_ns);
+                        println!("  Processed frame {} in {:.2}µs", frame_number, render_time_ns);
                     }
                     RendererEvent::ViewportResized { width, height } => {
                         println!("  Viewport resized to {}x{}", width, height);
@@ -81,7 +105,9 @@ async fn await_renderer_events_example() -> Result<(), Box<dyn std::error::Error
                         println!("  Shutdown requested");
                         break;
                     }
-                    _ => {} // TODO: implement handling for the oder events
+                    _ => {
+                        println!("  Other event: {:?}", event);
+                    }
                 }
             }
             Err(e) => {
@@ -93,12 +119,13 @@ async fn await_renderer_events_example() -> Result<(), Box<dyn std::error::Error
 
     sender_task.await?;
     println!("Processed {} frames total", frame_count);
+    println!("Total events received: {}", event_receiver.received_events_count());
     Ok(())
 }
 
-/// Demonstrates usage with a custom event type
+/// Demonstrates usage with a custom event type and f32 precision for low-latency requirements
 async fn await_custom_events_example() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n--- Custom Events Example ---");
+    println!("\n--- Custom Events Example (Low-Latency f32 Config) ---");
 
     #[derive(Debug, Clone)]
     enum CustomEvent {
@@ -107,9 +134,15 @@ async fn await_custom_events_example() -> Result<(), Box<dyn std::error::Error>>
         TimerExpired { id: u32 },
     }
 
+    // Create a low-latency configuration with f32 precision for real-time applications
+    let config = AsyncChannelConfig::<f32>::low_latency(0.001f32);
+    println!("Using f32 precision config - Buffer: {}, Timeout: {:?}",
+             config.maximum_buffer_size,
+             config.timeout());
+
     // Create channel for custom events
     let (sender, receiver) = async_channel::bounded::<CustomEvent>(10);
-    let event_receiver = AsyncEventReceiver::new(receiver);
+    let event_receiver = AsyncEventReceiver::new(receiver, config);
 
     // Send some custom events
     tokio::spawn(async move {
@@ -131,7 +164,7 @@ async fn await_custom_events_example() -> Result<(), Box<dyn std::error::Error>>
     // Process custom events
     for _ in 0..3 {
         // First try non-blocking receive
-        match event_receiver.try_recv() {
+        match event_receiver.try_receive_event() {
             Ok(event) => {
                 println!("  Immediately received: {:?}", event);
                 continue;
@@ -146,7 +179,7 @@ async fn await_custom_events_example() -> Result<(), Box<dyn std::error::Error>>
         }
 
         // If no immediate event, wait for one
-        match event_receiver.recv().await {
+        match event_receiver.receive_event().await {
             Ok(event) => {
                 println!("  Received after waiting: {:?}", event);
             }
@@ -154,6 +187,97 @@ async fn await_custom_events_example() -> Result<(), Box<dyn std::error::Error>>
                 println!("  Error receiving: {}", e);
                 break;
             }
+        }
+    }
+
+    println!("Custom events received: {}", event_receiver.received_events_count());
+    println!("Configuration precision threshold: {}", event_receiver.configuration().precision_threshold());
+    Ok(())
+}
+
+/// Demonstrates the Stream interface functionality
+async fn await_stream_interface_example() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n--- Stream Interface Example ---");
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum StreamEvent {
+        Data(i32),
+        End,
+    }
+
+    // Use bounded configuration with backpressure for stream processing
+    let config = AsyncChannelConfig::<f64>::bounded_with_backpressure(5);
+    let (sender, receiver) = async_channel::bounded::<StreamEvent>(10);
+    let mut event_receiver = AsyncEventReceiver::new(receiver, config);
+
+    // Send a sequence of events
+    tokio::spawn(async move {
+        for i in 1..=10 {
+            sender.send(StreamEvent::Data(i)).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        sender.send(StreamEvent::End).await.unwrap();
+    });
+
+    println!("Processing events as a Stream:");
+
+    // Use the Stream interface to process events
+    let mut count = 0;
+    while let Some(event) = event_receiver.next().await {
+        match event {
+            StreamEvent::Data(value) => {
+                count += 1;
+                println!("  Stream event {}: Data({})", count, value);
+            }
+            StreamEvent::End => {
+                println!("  Stream end signal received");
+                break;
+            }
+        }
+
+        // Demonstrate that we can still access receiver properties
+        if count % 3 == 0 {
+            println!("    - Queue length: {}, Events processed: {}",
+                     event_receiver.len(),
+                     event_receiver.received_events_count());
+        }
+    }
+
+    println!("Stream processing complete. Total events: {}", event_receiver.received_events_count());
+    Ok(())
+}
+
+/// Showcases different configuration options and their effects
+async fn await_configuration_showcase() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n--- Configuration Showcase ---");
+
+    // Example with different configurations
+    let configs = vec![
+        ("Default f64", AsyncChannelConfig::<f64>::default()),
+        ("Unbounded", AsyncChannelConfig::<f64>::unbounded()),
+        ("Bounded(100)", AsyncChannelConfig::<f64>::bounded(100)),
+        ("Low-latency f32", AsyncChannelConfig::<f64>::low_latency(0.1f64)),
+        ("High-throughput", AsyncChannelConfig::<f64>::high_throughput(0.01)),
+    ];
+
+    for (name, config) in configs {
+        println!("\n{} Configuration:", name);
+        println!("  - Buffer size: {}",
+                 if config.is_unbounded() { "Unlimited".to_string() } else { config.maximum_buffer_size.to_string() });
+        println!("  - Backpressure: {}", config.has_backpressure());
+        println!("  - Timeout: {:?}", config.timeout());
+        println!("  - Statistics interval: {:?}", config.statistics_interval);
+
+        // Quick demonstration with a simple event
+        let (sender, receiver) = async_channel::bounded::<String>(1);
+        let event_receiver = AsyncEventReceiver::new(receiver, config);
+
+        sender.send("test".to_string()).await.unwrap();
+        drop(sender);
+
+        if let Ok(event) = event_receiver.receive_event().await {
+            println!("  - Successfully processed: '{}'", event);
+            println!("  - Events count: {}", event_receiver.received_events_count());
         }
     }
 

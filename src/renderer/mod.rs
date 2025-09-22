@@ -80,7 +80,7 @@ pub enum RendererKind {
 
 impl RendererKind {
     pub fn all() -> Vec<Self> {
-        let mut kinds = vec![RendererKind::CpuReference];
+        let kinds = vec![RendererKind::CpuReference];
         #[cfg(feature = "gpu")]
         kinds.push(RendererKind::GpuOptional);
         kinds
@@ -170,7 +170,7 @@ impl RendererManager {
 
     /// Notify all subscribers including the buffered async sender.
     async fn notify_async(&self, event: RendererEvent) {
-        let mut inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap();
 
         // Sync
         if let Some(sender) = &inner.sender {
@@ -186,12 +186,12 @@ impl RendererManager {
         if let Some(buffered_sender) = &inner.buffered_async_sender {
             let sender = buffered_sender.clone();
             drop(inner); // Release lock before awaiting
-            sender.send_event(event).await;
+            let _ = sender.send_event(event).await;
         }
     }
 
     fn notify(&self, event: RendererEvent) {
-        let mut inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap();
         // Sync
         if let Some(sender) = &inner.sender {
             let _ = sender.send(event.clone());

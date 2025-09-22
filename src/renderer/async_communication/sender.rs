@@ -286,7 +286,7 @@ where
     /// Result indicating success or failure of the send operation
     pub async fn send_event(&self, event: RendererEvent) -> Result<(), mpsc::error::SendError<RendererEvent>> {
         match self.inner.lock() {
-            Ok(mut guard) => {
+            Ok(guard) => {
                 match guard.configuration {
                     ChannelConfiguration::Bounded { .. } => {
                         if let Some(ref sender) = guard.bounded_sender {
@@ -536,8 +536,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_bounded_channel_configuration() {
-        let (tx, _rx) = mpsc::channel::<RendererEvent>(10);
-        let (sender,receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(10, false, Arc::new(AtomicU64::new((5))));
+        let (_tx, _rx) = mpsc::channel::<RendererEvent>(10);
+        let (sender,_receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(10, false, Arc::new(AtomicU64::new(5)));
 
         assert_eq!(sender.get_configuration(), Some(ChannelConfiguration::Bounded { capacity: 10 }));
         assert_eq!(sender.get_buffer_size(), 0);

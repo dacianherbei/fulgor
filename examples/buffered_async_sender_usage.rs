@@ -31,14 +31,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn bounded_channel_drop_newest_example() -> Result<(), Box<dyn std::error::Error>> {
-    let (sender, mut receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(3, false,Arc::new(AtomicU64::new((0))));
+    let (sender, mut receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(3, false,Arc::new(AtomicU64::new(0)));
 
     println!("Created bounded channel with capacity 3, drop_newest_on_full = false");
 
     // Send events that will fill the channel
     for i in 0..5 {
         let event = RendererEvent::Started(RendererKind::CpuReference);
-        sender.send_event(event).await;
+        let _ = sender.send_event(event).await;
         println!("Sent event {}", i + 1);
     }
 
@@ -57,7 +57,7 @@ async fn bounded_channel_drop_newest_example() -> Result<(), Box<dyn std::error:
 }
 
 async fn bounded_channel_drop_oldest_example() -> Result<(), Box<dyn std::error::Error>> {
-    let (sender, mut receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(3, true,Arc::new(AtomicU64::new((0))));
+    let (sender, mut receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(3, true,Arc::new(AtomicU64::new(0)));
 
     println!("Created bounded channel with capacity 3, drop_oldest_on_full = true");
 
@@ -69,7 +69,7 @@ async fn bounded_channel_drop_oldest_example() -> Result<(), Box<dyn std::error:
             _ => RendererEvent::Switched(Some(RendererKind::CpuReference)),
         };
 
-        sender.send_event(event).await;
+        let _ = sender.send_event(event).await;
         println!("Sent event {} (dropped count: {})", i + 1, sender.get_dropped_count());
 
         // Small delay to allow some processing
@@ -98,7 +98,7 @@ async fn unbounded_channel_example() -> Result<(), Box<dyn std::error::Error>> {
     // Send many events rapidly
     for i in 0..100 {
         let event = RendererEvent::Started(RendererKind::CpuReference);
-        sender.send_event(event).await;
+        let _ = sender.send_event(event).await;
 
         if i % 20 == 0 {
             println!("Sent {} events (dropped count: {})", i + 1, sender.get_dropped_count());
