@@ -1,16 +1,17 @@
 use std::any::TypeId;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 use std::thread;
 
 use crate::renderer::{BufferedAsyncSender, DataPrecision, RendererError, RendererEvent, RendererEventStream, RendererFactory, RendererInfo, RendererKind};
-use crate::renderer::factory::Renderer;
+use crate::renderer::Renderer;
 
 /// Internal state of the manager.
 #[derive(Debug)]
-struct RendererManagerInner {
+pub struct RendererManagerInner {
     renderers: HashMap<RendererKind, Box<dyn Renderer + Send + Sync>>,
     active: Option<RendererKind>,
     sender: Option<mpsc::Sender<RendererEvent>>,

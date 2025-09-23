@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt::Debug;
-use crate::renderer::{DataPrecision, RendererError};
+pub(crate) use crate::renderer::{DataPrecision, Renderer, RendererError};
 
 pub fn parse_parameters(parameters: &str) -> HashMap<String, String> {
     let mut result = HashMap::new();
@@ -116,23 +116,6 @@ impl RendererInfo {
     }
 }
 
-/// Simple mock Renderer trait for testing the factory system
-///
-/// This is a simplified version of the main Renderer trait, focused on
-/// the basic lifecycle methods needed for factory testing.
-pub trait Renderer: Send + Sync + Debug + Any {
-    /// Start the renderer
-    fn start(&mut self) -> Result<(), String>;
-
-    /// Stop the renderer
-    fn stop(&mut self);
-
-    /// Get the renderer's name
-    fn name(&self) -> &'static str;
-
-    fn render_frame(&mut self) -> Result<(), String>;
-}
-
 /// Factory trait for creating renderer instances
 ///
 /// This trait provides a unified interface for creating different types of renderers
@@ -199,6 +182,22 @@ impl MockRenderer {
 }
 
 impl Renderer for MockRenderer {
+    fn set_data_precision(&mut self, precision: DataPrecision) -> Result<DataPrecision, String> {
+        todo!()
+    }
+
+    fn get_data_precision(&self) -> DataPrecision {
+        todo!()
+    }
+
+    fn is_running(&self) -> bool {
+        todo!()
+    }
+
+    fn get_frame_count(&self) -> u64 {
+        todo!()
+    }
+
     fn start(&mut self) -> Result<(), String> {
         if self.started {
             Err("Renderer is already started".to_string())
