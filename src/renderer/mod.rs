@@ -9,6 +9,7 @@ pub mod capabilities;
 pub mod custom;
 pub mod world;
 mod manager;
+mod system;
 
 use std::any::TypeId;
 use std::fmt::{self, Debug};
@@ -24,47 +25,50 @@ use std::any::Any;
 /// different parts of the application.
 #[derive(Debug, Clone)]
 pub enum RendererEvent {
-    /// A renderer backend has been started.
-    ///
-    /// Emitted when a specific renderer backend successfully initializes
-    /// and begins its rendering loop.
-    Started(RendererKind),
+    /// A renderer has been created.
+    RendererCreated {
+        renderer_name: String,
+        precision: DataPrecision
+    },
 
-    /// A renderer backend has been stopped.
-    ///
-    /// Emitted when a specific renderer backend has been shut down,
-    /// either gracefully or due to an error condition.
-    Stopped(RendererKind),
+    /// A renderer has been destroyed.
+    Destroyed {
+    },
 
-    ShutdownRequested,
+    /// A renderer has been started.
+    Started {
+    },
 
-    /// The active renderer has been switched.
-    ///
-    /// Emitted when the rendering system switches from one backend to another.
-    /// The `Option<RendererKind>` represents the new active renderer:
-    /// - `Some(RendererKind)` indicates a switch to the specified backend
-    /// - `None` indicates no renderer is currently active
-    Switched(Option<RendererKind>),
+    /// A renderer has been stopped.
+    Stopped {
+    },
 
     /// The data precision for computations has been changed.
-    ///
-    /// Emitted when a renderer changes its internal data precision,
-    /// which affects memory usage and computational accuracy.
     DataPrecisionChanged {
         old_precision: DataPrecision,
         new_precision: DataPrecision
     },
 
-    ViewportResized { width: u32, height: u32 },
-    SplatDataUpdated { splat_count: usize },
+    /// Viewport has been resized.
+    ViewportResized {
+        width: u32,
+        height: u32
+    },
+
+    /// Splat data has been updated.
+    SplatDataUpdated {
+        splat_count: usize
+    },
+
+    /// A frame has been rendered.
     FrameRendered {
-        renderer_kind: RendererKind,
         frame_number: u64,
         frame_time_microseconds: u64,
         render_time_ns: u64
     },
-    Error {
-        renderer_kind: Option<RendererKind>,
+
+    /// An error occurred.
+    RendererError {
         message: String,
     },
 }
@@ -369,43 +373,6 @@ impl RendererFactory for ReferenceRendererFactory {
     }
 }
 
-/// Kinds of renderer backends available in fulgor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RendererKind {
-    CpuReference,
-    #[cfg(feature = "gpu")]
-    GpuOptional,
-    Reference,
-}
-
-impl RendererKind {
-    pub fn all() -> Vec<Self> {
-        let mut kinds = vec![RendererKind::CpuReference, RendererKind::Reference];
-        #[cfg(feature = "gpu")]
-        kinds.push(RendererKind::GpuOptional);
-        kinds
-    }
-
-    pub fn create(self) -> Box<dyn Renderer + Send + Sync> {
-        match self {
-            // Updated to use non-generic renderers that implement the enhanced Renderer trait
-            RendererKind::CpuReference => {
-                // Create a CPU reference renderer with default F32 precision
-                // This will need to be updated in the cpu_reference module
-                // to remove NumberType generics
-                Box::new(ReferenceRenderer::with_precision(DataPrecision::F32))
-            },
-            RendererKind::Reference => Box::new(ReferenceRenderer::new()),
-            #[cfg(feature = "gpu")]
-            RendererKind::GpuOptional => {
-                // This will need to be updated in the gpu_optional module
-                // to remove NumberType generics and implement the new traits
-                Box::new(ReferenceRenderer::with_precision(DataPrecision::F32))
-            },
-        }
-    }
-}
-
 /// Async stream of renderer events.
 pub struct RendererEventStream {
     buffer: Arc<Mutex<Vec<RendererEvent>>>,
@@ -635,7 +602,7 @@ mod tests {
     #[test]
     fn test_renderer_kind_creation() {
         // Test that renderers can be created and implement the enhanced Renderer trait
-        let mut cpu_renderer = RendererKind::CpuReference.create();
+        let mut cpu_renderer = ReferenceRenderer::new();
         assert_eq!(cpu_renderer.name(), "ReferenceRenderer"); // Placeholder until cpu_reference is updated
 
         // Test factory trait methods work through the trait object
@@ -644,7 +611,7 @@ mod tests {
 
         cpu_renderer.stop();
 
-        let mut ref_renderer = RendererKind::Reference.create();
+        let mut ref_renderer = ReferenceRenderer::new();
         assert_eq!(ref_renderer.name(), "ReferenceRenderer");
 
         #[cfg(feature = "gpu")]
@@ -685,7 +652,7 @@ mod tests {
     #[test]
     fn test_trait_object_debug() {
         // Test that trait objects properly implement Debug
-        let renderer = RendererKind::Reference.create();
+        let renderer = ReferenceRenderer::new();
         let debug_string = format!("{:?}", renderer);
         assert!(debug_string.contains("ReferenceRenderer"));
     }

@@ -2,9 +2,7 @@
 //! Comprehensive demo of the restructured factory system
 
 use fulgor::renderer::prelude::*;
-use fulgor::renderer::cpu_reference::{CpuReferenceRendererFactory, CpuReferenceConfig, CpuReferenceRenderer};
-use fulgor::renderer::gpu_optional::{GpuRendererFactory, GpuRendererConfig, GpuOptionalRenderer};
-use fulgor::renderer::factory::{parse_parameters, RendererFactory};
+use fulgor::renderer::factory::{parse_parameters, ReferenceRendererConfig, RendererFactory};
 
 fn main() {
     println!("🚀 Restructured 3D Gaussian Splatting Factory System Demo\n");
@@ -22,8 +20,8 @@ fn demo_module_organization() {
     println!("=== Module Organization Demo ===");
 
     // Factories are now in their respective modules
-    let cpu_factory = CpuReferenceRendererFactory::new();
-    let gpu_factory = GpuRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
 
     println!("✓ CPU factory from cpu_reference module");
     println!("✓ GPU factory from gpu_optional module");
@@ -41,33 +39,23 @@ fn demo_enhanced_renderers() {
     println!("=== Enhanced Renderer Demo ===");
 
     // Traditional way (backward compatible)
-    let basic_cpu = CpuReferenceRenderer::<f32>::new();
-    println!("✓ Traditional CpuReferenceRenderer::new() still works");
-
-    // New way with configuration
-    let config = CpuReferenceConfig::from_parameters(
-        DataPrecision::F32,
-        "threads=8,quality=ultra,debug=true"
-    ).unwrap();
-    let configured_cpu = CpuReferenceRenderer::<f32>::with_config(config);
-
-    println!("✓ New with_config() constructor available");
-    println!("  Configuration: threads={}, quality={}, debug={}",
-             configured_cpu.get_config().threads,
-             configured_cpu.get_config().quality,
-             configured_cpu.get_config().debug);
+    let basic_cpu = ReferenceRenderer::new();
+    println!("✓ Traditional ReferenceRenderer::new() still works");
 
     // GPU renderer enhancement
-    let gpu_config = GpuRendererConfig::from_parameters(
+    let gpu_config = OpenGL3RendererConfig::from_parameters(
         DataPrecision::F32,
         "device=cuda:0,memory_limit=2GB"
     ).unwrap();
-    let configured_gpu = GpuOptionalRenderer::with_config(gpu_config);
+    let configured_gpu = OpenGL3Renderer::new(gpu_config);
 
     println!("✓ GPU renderer also enhanced with configuration");
-    println!("  Device: {}, Memory: {}MB",
-             configured_gpu.get_config().device,
-             configured_gpu.get_config().memory_limit / (1024 * 1024));
+
+    println!("  OpenGL: {}.{}, Viewpot: {}x{}",
+             configured_gpu.config().opengl_version.0,
+             configured_gpu.config().opengl_version.1,
+             configured_gpu.config().viewport_size.0,
+             configured_gpu.config().viewport_size.1);
     println!();
 }
 
@@ -107,7 +95,7 @@ fn demo_configuration_management() {
     ];
 
     for (precision, params, description) in cpu_configs {
-        match CpuReferenceConfig::from_parameters(precision, params) {
+        match ReferenceRendererConfig::from_parameters(precision, params) {
             Ok(config) => {
                 println!("  ✓ {}: threads={}, quality={}, debug={}, precision={}",
                          description, config.threads, config.quality, config.debug, config.precision);
@@ -129,7 +117,7 @@ fn demo_configuration_management() {
     ];
 
     for (precision, params, description) in gpu_configs {
-        match GpuRendererConfig::from_parameters(precision, params) {
+        match OpenGL3RendererConfig::from_parameters(precision, params) {
             Ok(config) => {
                 println!("  ✓ {}: device={}, memory={}MB, precision={}",
                          description, config.device, config.memory_limit / (1024 * 1024), config.precision);
@@ -145,8 +133,8 @@ fn demo_configuration_management() {
 fn demo_factory_capabilities() {
     println!("=== Factory Capabilities Demo ===");
 
-    let cpu_factory = CpuReferenceRendererFactory::new();
-    let gpu_factory = GpuRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
 
     // Display factory information
     let cpu_info = cpu_factory.get_info();
@@ -200,8 +188,8 @@ fn demo_factory_capabilities() {
 fn demo_realistic_workflows() {
     println!("=== Realistic Workflow Demo ===");
 
-    let cpu_factory = CpuReferenceRendererFactory::new();
-    let gpu_factory = GpuRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
 
     // Workflow 1: Algorithm Development
     println!("🔬 Algorithm Development Workflow:");
@@ -282,14 +270,14 @@ fn demo_backward_compatibility() {
     println!("Existing code patterns still work:");
 
     // Traditional renderer creation
-    let basic_cpu = CpuReferenceRenderer::<f32>::new();
-    let basic_gpu = GpuOptionalRenderer::new();
+    let basic_cpu = ReferenceRenderer::new();
+    let basic_gpu = OpenGL3Renderer::new();
 
-    println!("  ✓ CpuReferenceRenderer::<f32>::new() - works");
-    println!("  ✓ GpuOptionalRenderer::new() - works");
+    println!("  ✓ ReferenceRenderer::<f32>::new() - works");
+    println!("  ✓ OpenGL3Renderer::new() - works");
 
     // Traditional renderer usage
-    let mut traditional_renderer = CpuReferenceRenderer::<f64>::new();
+    let mut traditional_renderer = ReferenceRenderer::new();
 
     println!("  ✓ Traditional lifecycle methods work:");
     assert!(traditional_renderer.start().is_ok());
@@ -319,15 +307,15 @@ fn demo_registry_integration() {
 
     // Mock registry to show integration patterns
     struct RendererRegistry {
-        cpu_factory: CpuReferenceRendererFactory,
-        gpu_factory: GpuRendererFactory,
+        cpu_factory: ReferenceRendererFactory,
+        gpu_factory: OpenGL3RendererFactory,
     }
 
     impl RendererRegistry {
         fn new() -> Self {
             Self {
-                cpu_factory: CpuReferenceRendererFactory::new(),
-                gpu_factory: GpuRendererFactory::new(),
+                cpu_factory: ReferenceRendererFactory::new(),
+                gpu_factory: OpenGL3RendererFactory::new(),
             }
         }
 

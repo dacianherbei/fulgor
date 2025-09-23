@@ -461,7 +461,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::{RendererEvent, RendererKind};
+    use crate::renderer::{RendererEvent};
     use futures::StreamExt;
     use tokio::time::{timeout, Duration};
 
@@ -479,7 +479,6 @@ mod tests {
 
         // Send an event
         let test_event = RendererEvent::FrameRendered {
-            renderer_kind: RendererKind::CpuReference,
             frame_number: 42,
             frame_time_microseconds: 0,
             render_time_ns: 1667,
@@ -551,7 +550,6 @@ mod tests {
         // Send some events
         let test_events = vec![
             RendererEvent::FrameRendered {
-                renderer_kind: RendererKind::CpuReference,
                 frame_number: 1,
                 frame_time_microseconds: 0,
                 render_time_ns: 1000,

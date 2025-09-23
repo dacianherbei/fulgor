@@ -1,42 +1,23 @@
 //! Convenient re-exports for the renderer module.
-//!
-//! This prelude module provides easy access to commonly used types and traits
-//! from the renderer system. Import this module to get access to the core
-//! renderer functionality without needing to import individual components.
-//!
-//! # Example
-//! ```
-//! use crate::renderer::prelude::*;
-//!
-//! // Now you have access to all core renderer types
-//! let manager = RendererManager::new();
-//! let factory = MockRendererFactory::new("TestFactory");
-//! ```
 
-// Core types and traits
-pub use super::{RendererKind, RendererEvent, RendererEventStream,
-                DataPrecision, RendererError, RendererInfo,
-                Capability, ProcessingUnitCapability, Renderer, ReferenceRenderer};
+// Core types and traits (no RendererKind)
+pub use super::{RendererEvent, RendererEventStream, RendererError,
+                DataPrecision, Capability, ProcessingUnitCapability, Renderer,
+                ReferenceRenderer};
 
-// Re-export factory types with clear naming to avoid confusion
-pub use super::factory::{RendererFactory, MockRenderer, MockRendererFactory};
-
-// Manager for factory registration and renderer creation
+// Factory system
+pub use super::factory::{RendererFactory, RendererInfo, MockRenderer, MockRendererFactory, ReferenceRendererFactory};
 pub use super::manager::RendererManager;
 
-// Concrete renderer implementations
-pub use super::cpu_reference::CpuReferenceRenderer;
-#[cfg(feature = "gpu")]
-pub use super::gpu_optional::GpuOptionalRenderer;
+// Custom renderers
+pub use super::custom::{OpenGL3Renderer, OpenGL3RendererConfig,
+                        OpenGL3RendererBuilder, OpenGL3RendererFactory};
 
-// Async communication utilities
-pub use super::async_communication::sender::{BufferedAsyncSender, ChannelConfiguration};
+// Async communication
+pub use super::async_communication::sender::BufferedAsyncSender;
 
 // Capability system
 pub use super::capabilities;
-
-// OpenGL3 renderer system
-pub use super::opengl3::{OpenGL3Renderer, OpenGL3RendererConfig, OpenGL3RendererBuilder};
 
 // World and scene management
 pub use super::world::{World, Camera, GaussianSplat, Point3D, PrecisionPoint3D};

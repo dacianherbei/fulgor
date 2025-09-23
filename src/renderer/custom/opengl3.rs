@@ -205,6 +205,76 @@ void main() {
     }
 }
 
+/// Factory for creating OpenGL3Renderer instances.
+#[derive(Debug)]
+pub struct OpenGL3RendererFactory {
+    factory_name: String,
+}
+
+impl OpenGL3RendererFactory {
+    pub fn new() -> Self {
+        Self {
+            factory_name: "OpenGL3Renderer".to_string(),
+        }
+    }
+}
+
+impl Default for OpenGL3RendererFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl crate::renderer::factory::RendererFactory for OpenGL3RendererFactory {
+    fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn crate::renderer::Renderer>, crate::renderer::RendererError> {
+        use crate::renderer::RendererError;
+
+        self.validate_parameters(precision, parameters)?;
+
+        let config = OpenGL3RendererConfig::from_parameters(precision, parameters)
+            .map_err(|e| RendererError::InvalidParameters(e))?;
+
+        let supported_precisions = vec![DataPrecision::F16, DataPrecision::F32];
+        if !supported_precisions.contains(&precision) {
+            return Err(RendererError::UnsupportedPrecision(precision));
+        }
+
+        Ok(Box::new(OpenGL3Renderer::new(config)))
+    }
+
+    fn get_info(&self) -> crate::renderer::factory::RendererInfo {
+        use std::collections::HashMap;
+
+        let mut parameters = HashMap::new();
+        parameters.insert("max_splat_count".to_string(), "Maximum number of Gaussian splats (default: 1000000)".to_string());
+        parameters.insert("msaa_samples".to_string(), "MSAA sample count (0, 2, 4, 8, 16)".to_string());
+        parameters.insert("viewport_size".to_string(), "Viewport dimensions: 'WIDTHxHEIGHT'".to_string());
+        parameters.insert("depth_testing".to_string(), "Enable depth testing (true/false)".to_string());
+        parameters.insert("alpha_blending".to_string(), "Enable alpha blending (true/false)".to_string());
+
+        crate::renderer::factory::RendererInfo::new(
+            self.factory_name.clone(),
+            "opengl3,gpu_acceleration,hardware_rendering,real_time,gaussian_splatting,msaa".to_string(),
+            parameters,
+            10000, // 10ms timeout
+        )
+    }
+
+    fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), crate::renderer::RendererError> {
+        use crate::renderer::RendererError;
+
+        let supported_precisions = vec![DataPrecision::F16, DataPrecision::F32];
+        if !supported_precisions.contains(&precision) {
+            return Err(RendererError::UnsupportedPrecision(precision));
+        }
+
+        OpenGL3RendererConfig::from_parameters(precision, parameters)
+            .map_err(|e| RendererError::InvalidParameters(e))?;
+
+        Ok(())
+    }
+}
+
 /// OpenGL 3.x-based renderer for 3D Gaussian Splatting.
 ///
 /// This renderer provides a high-performance implementation using modern OpenGL 3.x
@@ -477,6 +547,7 @@ impl Renderer for OpenGL3Renderer {
 }
 
 /// Builder for creating OpenGL3 renderer configurations.
+#[derive(Debug, Clone)]
 pub struct OpenGL3RendererBuilder {
     config: OpenGL3RendererConfig,
 }

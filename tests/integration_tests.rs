@@ -1,10 +1,9 @@
 // tests/integration_tests.rs
 //! Integration tests for the restructured factory system
 
+use std::collections::HashMap;
 use fulgor::renderer::prelude::*;
-use fulgor::renderer::{ReferenceRendererFactory, ReferenceRendererConfig};
-use fulgor::renderer::factory::{GpuRendererFactory, GpuRendererConfig};
-use fulgor::renderer::factory::{parse_parameters, RendererFactory};
+use fulgor::renderer::factory::{parse_parameters, ReferenceRendererConfig, RendererFactory};
 use std::time::Duration;
 
 #[test]
@@ -12,7 +11,7 @@ fn test_restructured_development_workflow() {
     println!("=== Restructured Development Workflow Test ===");
 
     // Developer starts with CPU reference for algorithm development
-    let cpu_factory = CpuReferenceRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
 
     // Debug mode with single thread for step-through debugging
     let mut dev_renderer = cpu_factory.create(
@@ -31,7 +30,7 @@ fn test_restructured_development_workflow() {
     dev_renderer.stop();
 
     // Move to production GPU rendering
-    let gpu_factory = GpuRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
     let mut prod_renderer = gpu_factory.create(
         DataPrecision::F32,
         "device=cuda:0,memory_limit=2GB"
@@ -58,7 +57,7 @@ fn test_restructured_development_workflow() {
 fn test_enhanced_renderer_functionality() {
     println!("=== Enhanced Renderer Functionality Test ===");
 
-    let cpu_factory = CpuReferenceRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
 
     // Test F32 renderer with configuration
     let mut f32_renderer = cpu_factory.create(
@@ -130,7 +129,7 @@ fn test_cpu_config_validation() {
     ];
 
     for (precision, params) in valid_configs {
-        let config = CpuReferenceConfig::from_parameters(precision, params);
+        let config = ReferenceRendererConfig::from_parameters(precision, params);
         assert!(config.is_ok(), "Failed for precision {:?}, params: '{}'", precision, params);
     }
 
@@ -144,7 +143,7 @@ fn test_cpu_config_validation() {
     ];
 
     for (precision, params) in invalid_configs {
-        let config = CpuReferenceConfig::from_parameters(precision, params);
+        let config = ReferenceRendererConfig::from_parameters(precision, params);
         assert!(config.is_err(), "Should have failed for precision {:?}, params: '{}'", precision, params);
     }
 
@@ -165,7 +164,7 @@ fn test_gpu_config_validation() {
     ];
 
     for (precision, params) in valid_configs {
-        let config = GpuRendererConfig::from_parameters(precision, params);
+        let config = OpenGL3RendererConfig::from_parameters(precision, params);
         assert!(config.is_ok(), "Failed for precision {:?}, params: '{}'", precision, params);
     }
 
@@ -180,7 +179,7 @@ fn test_gpu_config_validation() {
     ];
 
     for (precision, params) in invalid_configs {
-        let config = GpuRendererConfig::from_parameters(precision, params);
+        let config = OpenGL3RendererConfig::from_parameters(precision, params);
         assert!(config.is_err(), "Should have failed for precision {:?}, params: '{}'", precision, params);
     }
 
@@ -191,8 +190,8 @@ fn test_gpu_config_validation() {
 fn test_factory_information_consistency() {
     println!("=== Factory Information Consistency Test ===");
 
-    let cpu_factory = CpuReferenceRendererFactory::new();
-    let gpu_factory = GpuRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
 
     // Test CPU factory info
     let cpu_info = cpu_factory.get_info();
@@ -235,8 +234,8 @@ fn test_factory_information_consistency() {
 fn test_precision_support_matrix() {
     println!("=== Precision Support Matrix Test ===");
 
-    let cpu_factory = CpuReferenceRendererFactory::new();
-    let gpu_factory = GpuRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
 
     println!("CPU Factory Precision Support:");
     for precision in [DataPrecision::F16, DataPrecision::F32, DataPrecision::F64, DataPrecision::BFloat16] {
@@ -271,8 +270,8 @@ fn test_precision_support_matrix() {
 fn test_validation_vs_creation_consistency() {
     println!("=== Validation vs Creation Consistency Test ===");
 
-    let cpu_factory = CpuReferenceRendererFactory::new();
-    let gpu_factory = GpuRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
 
     // Test cases where validation and creation should agree
     let test_cases = [
@@ -302,8 +301,8 @@ fn test_validation_vs_creation_consistency() {
 fn test_realistic_usage_scenarios() {
     println!("=== Realistic Usage Scenarios Test ===");
 
-    let cpu_factory = CpuReferenceRendererFactory::new();
-    let gpu_factory = GpuRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
 
     // Scenario 1: Research/Development Environment
     println!("Scenario 1: Research Environment");
@@ -355,8 +354,8 @@ fn test_concurrent_factory_usage() {
     use std::sync::Arc;
     use std::thread;
 
-    let cpu_factory = Arc::new(CpuReferenceRendererFactory::new());
-    let gpu_factory = Arc::new(GpuRendererFactory::new());
+    let cpu_factory = Arc::new(ReferenceRendererFactory::new());
+    let gpu_factory = Arc::new(OpenGL3RendererFactory::new());
 
     let mut handles = vec![];
 
@@ -404,7 +403,7 @@ fn test_memory_limit_parsing_edge_cases() {
     ];
 
     for (params, expected_bytes) in test_cases {
-        let config = GpuRendererConfig::from_parameters(DataPrecision::F32, params).unwrap();
+        let config = OpenGL3RendererConfig::from_parameters(DataPrecision::F32, params).unwrap();
         assert_eq!(config.memory_limit, expected_bytes, "Failed for params: '{}'", params);
     }
 
@@ -417,7 +416,7 @@ fn test_memory_limit_parsing_edge_cases() {
     ];
 
     for params in invalid_cases {
-        let config = GpuRendererConfig::from_parameters(DataPrecision::F32, params);
+        let config = OpenGL3RendererConfig::from_parameters(DataPrecision::F32, params);
         assert!(config.is_err(), "Should have failed for params: '{}'", params);
     }
 
@@ -428,8 +427,8 @@ fn test_memory_limit_parsing_edge_cases() {
 fn test_factory_error_messages() {
     println!("=== Factory Error Messages Test ===");
 
-    let cpu_factory = CpuReferenceRendererFactory::new();
-    let gpu_factory = GpuRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
 
     // Test descriptive error messages
     match cpu_factory.create(DataPrecision::F16, "") {
@@ -472,7 +471,7 @@ fn test_default_configurations() {
     println!("=== Default Configurations Test ===");
 
     // Test CPU default configuration
-    let cpu_config = CpuReferenceConfig::default();
+    let cpu_config = ReferenceRendererConfig::default();
     assert_eq!(cpu_config.quality, "medium");
     assert_eq!(cpu_config.debug, false);
     assert_eq!(cpu_config.precision, DataPrecision::F32);
@@ -480,15 +479,15 @@ fn test_default_configurations() {
     println!("✓ CPU default configuration is sensible");
 
     // Test GPU default configuration
-    let gpu_config = GpuRendererConfig::default();
+    let gpu_config = OpenGL3RendererConfig::default();
     assert_eq!(gpu_config.device, "auto");
     assert_eq!(gpu_config.memory_limit, 1024 * 1024 * 1024); // 1GB
     assert_eq!(gpu_config.precision, DataPrecision::F32);
     println!("✓ GPU default configuration is sensible");
 
     // Test that factories create renderers with defaults when no params provided
-    let cpu_factory = CpuReferenceRendererFactory::new();
-    let gpu_factory = GpuRendererFactory::new();
+    let cpu_factory = ReferenceRendererFactory::new();
+    let gpu_factory = OpenGL3RendererFactory::new();
 
     let cpu_renderer = cpu_factory.create(DataPrecision::F32, "").unwrap();
     let gpu_renderer = gpu_factory.create(DataPrecision::F32, "").unwrap();

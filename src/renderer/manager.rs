@@ -6,19 +6,8 @@ use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 use std::thread;
 
-use crate::renderer::{BufferedAsyncSender, DataPrecision, RendererError, RendererEvent, RendererEventStream, RendererFactory, RendererInfo, RendererKind};
+use crate::renderer::{BufferedAsyncSender, DataPrecision, RendererError, RendererEvent, RendererEventStream, RendererFactory, RendererInfo};
 use crate::renderer::Renderer;
-
-/// Internal state of the manager.
-#[derive(Debug)]
-pub struct RendererManagerInner {
-    renderers: HashMap<RendererKind, Box<dyn Renderer + Send + Sync>>,
-    active: Option<RendererKind>,
-    sender: Option<mpsc::Sender<RendererEvent>>,
-    async_sinks: Vec<Arc<Mutex<Vec<RendererEvent>>>>,
-    // New field for async buffered sender
-    buffered_async_sender: Option<BufferedAsyncSender<RendererEvent>>,
-}
 
 /// Thread-safe manager for renderer factories with timeout protection.
 ///
@@ -29,23 +18,16 @@ pub struct RendererManagerInner {
 pub struct RendererManager {
     /// Map of TypeId to factory instances, protected by mutex for thread safety
     factories: Arc<Mutex<HashMap<TypeId, Box<dyn RendererFactory>>>>,
-    inner: Arc<Mutex<RendererManagerInner>>,
 }
 
 impl RendererManager {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(RendererManagerInner {
-                renderers: HashMap::new(),
-                active: None,
-                sender: None,
-                async_sinks: Vec::new(),
-                buffered_async_sender: None,
-            })),
             factories: Arc::new(Mutex::new(HashMap::new()))
         }
     }
 
+    /*
     /// Subscribe synchronously (std channel).
     pub fn subscribe(&self) -> mpsc::Receiver<RendererEvent> {
         let (tx, rx) = mpsc::channel();
@@ -124,12 +106,12 @@ impl RendererManager {
         }
     }
 
-    pub fn add(&self, kind: RendererKind) {
+    pub fn add(&self) {
         let mut inner = self.inner.lock().unwrap();
         inner.renderers.entry(kind).or_insert_with(|| kind.create());
     }
 
-    pub async fn start_async(&self, kind: RendererKind) -> Result<(), String> {
+    pub async fn start_async(&self) -> Result<(), String> {
         let result = {
             let mut inner = self.inner.lock().unwrap();
             inner.renderers.entry(kind).or_insert_with(|| kind.create());
@@ -283,7 +265,7 @@ impl RendererManager {
         inner.active = None;
         drop(inner);
         self.notify(RendererEvent::Switched(None));
-    }
+    }*/
 
     /// Register a new renderer factory with timeout protection.
     ///

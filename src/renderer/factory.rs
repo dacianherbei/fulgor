@@ -324,6 +324,178 @@ impl RendererFactory for MockRendererFactory {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ReferenceRendererConfig {
+    pub threads: usize,
+    pub quality: String,
+    pub debug: bool,
+    /// Preferred data precision for vertex data
+    pub precision: DataPrecision,
+    /// Maximum number of Gaussian splats to render
+    pub max_splat_count: usize,
+
+    /// Supported data precisions
+    pub supported_precisions: Vec<DataPrecision>,
+
+    /// Viewport dimensions (width, height)
+    pub viewport_size: (u32, u32),
+}
+
+impl Default for ReferenceRendererConfig {
+    fn default() -> Self {
+        Self {
+            threads: num_cpus::get(),
+            quality: "medium".to_string(),
+            debug: false,
+            precision: DataPrecision::F32,
+            max_splat_count: 1_000_000, // 1 million splats
+            supported_precisions: vec![DataPrecision::F16, DataPrecision::F32],
+            viewport_size: (1920, 1080), // Default to 1080p
+        }
+    }
+}
+
+impl ReferenceRendererConfig {
+    /// Create configuration from parameter string.
+    pub fn from_parameters(precision: DataPrecision, parameters: &str) -> Result<Self, String> {
+        let mut config = Self::default();
+        config.precision = precision;
+
+        if parameters.is_empty() {
+            return Ok(config);
+        }
+
+        let params = crate::renderer::factory::parse_parameters(parameters);
+
+        for (key, value) in params {
+            match key.as_str() {
+                "max_splat_count" => {
+                    config.max_splat_count = value.parse::<usize>()
+                        .map_err(|_| format!("Invalid max_splat_count: {}", value))?;
+                },
+                "threads" => {
+                    config.threads = value.parse::<usize>()
+                        .map_err(|_| RendererError::InvalidParameters(
+                            format!("Invalid threads value: {}", value)));
+
+                    if config.threads == 0 {
+                        return Err(RendererError::InvalidParameters(
+                            "threads must be greater than 0".to_string()
+                        )).to_string();
+                    }
+                },
+                "quality" => {
+                    config.quality = value.to_string().clone();
+                    match config.quality.as_str() {
+                        "low" | "medium" | "high" | "ultra" => {
+                            ;
+                        }
+                        _ => return Err(RendererError::InvalidParameters(
+                            format!("Invalid quality value: {}. Must be one of: low, medium, high, ultra", config.quality)
+                        )),
+                    }
+                },
+                "debug" => {
+                    config.debug = value.parse::<bool>()
+                        .map_err(|_| RendererError::InvalidParameters(
+                            format!("Invalid debug value: {}", value)
+                        ))?;
+                },
+                "viewport_size" => {
+                    let parts: Vec<&str> = value.split('x').collect();
+                    if parts.len() == 2 {
+                        let width = parts[0].parse::<u32>()
+                            .map_err(|_| format!("Invalid viewport width: {}", parts[0]))?;
+                        let height = parts[1].parse::<u32>()
+                            .map_err(|_| format!("Invalid viewport height: {}", parts[1]))?;
+                        config.viewport_size = (width, height);
+                    }
+                },
+                _ => {
+                }
+            }
+        }
+
+        Ok(config)
+    }
+}
+
+/// Factory for creating ReferenceRenderer instances.
+#[derive(Debug)]
+pub struct ReferenceRendererFactory {
+    factory_name: String,
+}
+
+impl ReferenceRendererFactory {
+    pub fn new() -> Self {
+        Self {
+            factory_name: "ReferenceRenderer".to_string(),
+        }
+    }
+}
+
+impl Default for ReferenceRendererFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RendererFactory for ReferenceRendererFactory {
+    fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn crate::renderer::Renderer>, RendererError> {
+        // Parse parameters if any
+        if !parameters.is_empty() {
+            let params = parse_parameters(parameters);
+            for (key, _) in params {
+                match key.as_str() {
+                    "precision" => {}, // Handled by precision parameter
+                    _ => {
+                        return Err(RendererError::InvalidParameters(
+                            format!("Unknown parameter for ReferenceRenderer: {}", key)
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(Box::new(crate::renderer::ReferenceRenderer::with_precision(precision)))
+    }
+
+    fn get_info(&self) -> RendererInfo {
+        let mut parameters = std::collections::HashMap::new();
+        parameters.insert(
+            "precision".to_string(),
+            "Data precision for rendering (f16, f32, f64, bfloat16)".to_string()
+        );
+
+        RendererInfo::new(
+            self.factory_name.clone(),
+            "reference,cpu,basic_rendering,all_precisions".to_string(),
+            parameters,
+            1000, // 1ms timeout
+        )
+    }
+
+    fn validate_parameters(&self, _precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
+        if parameters.is_empty() {
+            return Ok(());
+        }
+
+        let params = parse_parameters(parameters);
+        for (key, _) in params {
+            match key.as_str() {
+                "precision" => {},
+                _ => {
+                    return Err(RendererError::InvalidParameters(
+                        format!("Unknown parameter for ReferenceRenderer: {}", key)
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
