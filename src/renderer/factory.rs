@@ -108,7 +108,7 @@ pub trait Renderer: Send + Sync + Debug + Any {
 /// This trait provides a unified interface for creating different types of renderers
 /// with configurable precision and parameters. Implementations should be thread-safe
 /// and support concurrent creation of multiple renderer instances.
-pub trait RendererFactory: Send + Sync + Any {
+pub trait RendererFactory: Send + Sync + Any + Debug {
     /// Create a new renderer instance with the specified precision and parameters
     ///
     /// # Arguments

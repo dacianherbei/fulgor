@@ -7,6 +7,7 @@ pub mod gpu_optional;
 pub mod prelude;
 pub mod async_communication;
 pub mod factory;
+mod manager;
 
 use std::any::TypeId;
 use crate::renderer::cpu_reference::CpuReferenceRenderer;
