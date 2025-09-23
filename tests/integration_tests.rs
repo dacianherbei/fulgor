@@ -2,8 +2,8 @@
 //! Integration tests for the restructured factory system
 
 use fulgor::renderer::prelude::*;
-use fulgor::renderer::cpu_reference::{CpuReferenceRendererFactory, CpuReferenceConfig};
-use fulgor::renderer::gpu_optional::{GpuRendererFactory, GpuRendererConfig};
+use fulgor::renderer::{ReferenceRendererFactory, ReferenceRendererConfig};
+use fulgor::renderer::factory::{GpuRendererFactory, GpuRendererConfig};
 use fulgor::renderer::factory::{parse_parameters, RendererFactory};
 use std::time::Duration;
 
@@ -499,4 +499,63 @@ fn test_default_configurations() {
     println!("Default configurations: OK");
 }
 
-use std::collections::HashMap;
+#[cfg(test)]
+mod manager_error_integration_tests {
+    use super::*;
+    use crate::renderer::factory::MockRendererFactory;
+
+    #[test]
+    fn test_renderer_not_found_by_name_error() {
+        let manager = RendererManager::new();
+
+        // Try to create a renderer with a non-existent name
+        let result = manager.create_by_name("NonExistentRenderer", DataPrecision::F32, "");
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            RendererError::RendererNotFoundByName(name) => {
+                assert_eq!(name, "NonExistentRenderer");
+            }
+            other => panic!("Expected RendererNotFoundByName error, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_renderer_not_found_by_name_error_display() {
+        let error = RendererError::RendererNotFoundByName("TestRenderer".to_string());
+        let error_message = format!("{}", error);
+
+        assert_eq!(error_message, "Renderer factory not found with name: TestRenderer");
+    }
+
+    #[test]
+    fn test_successful_renderer_creation_by_name() {
+        // This test would work once you have the factory registration implemented
+        // For now, it's just a placeholder to show the intended usage
+
+        let mut manager = RendererManager::new();
+
+        // Register a mock factory (this would need the factory registration system)
+        // let factory = Box::new(MockRendererFactory::new("TestRenderer"));
+        // manager.register(factory).unwrap();
+
+        // Then try to create by name:
+        // let result = manager.create_by_name("TestRenderer", DataPrecision::F32, "");
+        // assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_parameters_for_missing_factory() {
+        let manager = RendererManager::new();
+
+        let result = manager.validate_parameters_for("MissingFactory", DataPrecision::F32, "test");
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            RendererError::RendererNotFoundByName(name) => {
+                assert_eq!(name, "MissingFactory");
+            }
+            other => panic!("Expected RendererNotFoundByName error, got: {:?}", other),
+        }
+    }
+}

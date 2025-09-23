@@ -477,7 +477,6 @@ impl Renderer for OpenGL3Renderer {
 }
 
 /// Builder for creating OpenGL3 renderer configurations.
-#[derive(Debug, Clone)]
 pub struct OpenGL3RendererBuilder {
     config: OpenGL3RendererConfig,
 }
@@ -592,7 +591,7 @@ mod tests {
 
     #[test]
     fn test_opengl3_renderer_creation() {
-        let renderer = OpenGL3Renderer::default();
+        let mut renderer = OpenGL3Renderer::default();
         assert_eq!(renderer.name(), "OpenGL3Renderer");
         assert_eq!(renderer.get_data_precision(), DataPrecision::F32);
         assert!(!renderer.is_running());

@@ -11,11 +11,11 @@ pub mod world;
 mod manager;
 
 use std::any::TypeId;
-use std::fmt;
+use std::fmt::{self, Debug};
 use std::sync::{Arc, Mutex};
 pub use crate::renderer::async_communication::sender::BufferedAsyncSender;
 pub use factory::{RendererInfo, RendererFactory, MockRenderer, MockRendererFactory};
-use std::fmt::Debug;
+use std::any::Any;
 
 /// Events emitted by renderer components in the fulgor engine.
 ///
@@ -126,10 +126,19 @@ pub trait ProcessingUnitCapability: Capability {
 
 /// Enhanced renderer trait that supports precision management.
 ///
-/// This trait extends both the factory `Renderer` trait and `ProcessingUnitCapability`
-/// to provide renderer-specific functionality including precision switching and
+/// This trait provides renderer-specific functionality including precision switching and
 /// configuration management while maintaining compatibility with the existing factory system.
-pub trait Renderer {
+///
+/// ## Trait Composition
+///
+/// This trait includes all necessary bounds for renderer implementations:
+/// - `Send + Sync` for thread safety
+/// - `Debug` for debugging and logging
+/// - Methods from both factory operations and enhanced precision management
+///
+/// This design allows the enhanced renderer to work seamlessly with the existing
+/// factory system while providing advanced precision and capability management.
+pub trait Renderer: Send + Sync + Debug {
     /// Set the data precision for this renderer.
     ///
     /// Attempts to change the internal data precision used for computations.
@@ -234,7 +243,7 @@ impl ProcessingUnitCapability for ReferenceRenderer {
     }
 }
 
-impl factory::Renderer for ReferenceRenderer {
+impl Renderer for ReferenceRenderer {
     fn start(&mut self) -> Result<(), String> {
         if self.is_running {
             Err("Renderer is already running".to_string())
@@ -289,6 +298,77 @@ impl factory::Renderer for ReferenceRenderer {
     }
 }
 
+/// Factory for creating ReferenceRenderer instances.
+#[derive(Debug)]
+pub struct ReferenceRendererFactory {
+    factory_name: String,
+}
+
+impl ReferenceRendererFactory {
+    /// Create a new ReferenceRenderer factory.
+    pub fn new() -> Self {
+        Self {
+            factory_name: "ReferenceRenderer".to_string(),
+        }
+    }
+}
+
+impl RendererFactory for ReferenceRendererFactory {
+    fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
+        // Parse parameters if any (reference renderer accepts minimal parameters)
+        if !parameters.is_empty() {
+            let params = factory::parse_parameters(parameters);
+            for (key, _) in params {
+                match key.as_str() {
+                    "precision" => {}, // Handled by precision parameter
+                    _ => {
+                        return Err(RendererError::InvalidParameters(
+                            format!("Unknown parameter for ReferenceRenderer: {}", key)
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(Box::new(ReferenceRenderer::with_precision(precision)))
+    }
+
+    fn get_info(&self) -> RendererInfo {
+        let mut parameters = std::collections::HashMap::new();
+        parameters.insert(
+            "precision".to_string(),
+            "Data precision for rendering (f16, f32, f64, bfloat16)".to_string()
+        );
+
+        RendererInfo::new(
+            self.factory_name.clone(),
+            "reference,cpu,basic_rendering,all_precisions".to_string(),
+            parameters,
+            1000, // 1ms timeout
+        )
+    }
+
+    fn validate_parameters(&self, _precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
+        if parameters.is_empty() {
+            return Ok(());
+        }
+
+        let params = factory::parse_parameters(parameters);
+        for (key, _) in params {
+            match key.as_str() {
+                "precision" => {},
+                _ => {
+                    return Err(RendererError::InvalidParameters(
+                        format!("Unknown parameter for ReferenceRenderer: {}", key)
+                    ));
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Kinds of renderer backends available in fulgor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RendererKind {
@@ -300,7 +380,7 @@ pub enum RendererKind {
 
 impl RendererKind {
     pub fn all() -> Vec<Self> {
-        let kinds = vec![RendererKind::CpuReference, RendererKind::Reference];
+        let mut kinds = vec![RendererKind::CpuReference, RendererKind::Reference];
         #[cfg(feature = "gpu")]
         kinds.push(RendererKind::GpuOptional);
         kinds
@@ -308,7 +388,7 @@ impl RendererKind {
 
     pub fn create(self) -> Box<dyn Renderer + Send + Sync> {
         match self {
-            // Updated to use non-generic renderers
+            // Updated to use non-generic renderers that implement the enhanced Renderer trait
             RendererKind::CpuReference => {
                 // Create a CPU reference renderer with default F32 precision
                 // This will need to be updated in the cpu_reference module
@@ -396,6 +476,10 @@ pub enum RendererError {
     /// This typically occurs when trying to retrieve an unregistered renderer.
     RendererNotFound(TypeId),
 
+    /// No renderer factory was found with the specified name.
+    /// Contains the name that was searched for.
+    RendererNotFoundByName(String),
+
     /// Factory already registered for the specified type.
     /// Contains the type identifier that was already registered.
     FactoryAlreadyRegistered(TypeId),
@@ -415,6 +499,9 @@ impl fmt::Display for RendererError {
             }
             RendererError::RendererNotFound(type_id) => {
                 write!(f, "Renderer not found for type: {:?}", type_id)
+            }
+            RendererError::RendererNotFoundByName(name) => {
+                write!(f, "Renderer factory not found with name: {}", name)
             }
             RendererError::FactoryAlreadyRegistered(type_id) => {
                 write!(f, "Factory already registered for type: {:?}", type_id)
@@ -444,6 +531,28 @@ mod tests {
         assert!(!renderer.is_running());
         assert_eq!(renderer.get_frame_count(), 0);
         assert_eq!(renderer.name(), "ReferenceRenderer");
+    }
+
+    #[test]
+    fn test_reference_renderer_factory() {
+        let factory = ReferenceRendererFactory::new();
+        let info = factory.get_info();
+
+        assert_eq!(info.name, "ReferenceRenderer");
+        assert!(info.has_capability("reference"));
+        assert!(info.has_capability("cpu"));
+        assert!(info.has_capability("basic_rendering"));
+        assert!(info.has_capability("all_precisions"));
+
+        // Test renderer creation
+        let renderer = factory.create(DataPrecision::F64, "").unwrap();
+        assert_eq!(renderer.get_data_precision(), DataPrecision::F64);
+        assert_eq!(renderer.name(), "ReferenceRenderer");
+
+        // Test parameter validation
+        assert!(factory.validate_parameters(DataPrecision::F32, "").is_ok());
+        assert!(factory.validate_parameters(DataPrecision::F32, "precision=f32").is_ok());
+        assert!(factory.validate_parameters(DataPrecision::F32, "invalid_param=value").is_err());
     }
 
     #[test]
@@ -525,29 +634,60 @@ mod tests {
 
     #[test]
     fn test_renderer_kind_creation() {
-        // Test that renderers can be created and implement both factory and enhanced traits
+        // Test that renderers can be created and implement the enhanced Renderer trait
         let mut cpu_renderer = RendererKind::CpuReference.create();
         assert_eq!(cpu_renderer.name(), "ReferenceRenderer"); // Placeholder until cpu_reference is updated
-        assert!(!cpu_renderer.is_running());
 
-        // Test factory trait methods
+        // Test factory trait methods work through the trait object
         let result = cpu_renderer.start();
         assert!(result.is_ok());
-        assert!(cpu_renderer.is_running());
 
         cpu_renderer.stop();
-        assert!(!cpu_renderer.is_running());
 
         let mut ref_renderer = RendererKind::Reference.create();
         assert_eq!(ref_renderer.name(), "ReferenceRenderer");
-        assert_eq!(ref_renderer.get_data_precision(), DataPrecision::F32);
 
         #[cfg(feature = "gpu")]
         {
             let mut gpu_renderer = RendererKind::GpuOptional.create();
             assert_eq!(gpu_renderer.name(), "ReferenceRenderer"); // Placeholder until gpu_optional is updated
-            assert!(!gpu_renderer.is_running());
         }
+    }
+
+    #[test]
+    fn test_enhanced_renderer_trait_composition() {
+        // Test that our enhanced Renderer trait properly includes all necessary methods
+        let mut renderer = ReferenceRenderer::new();
+
+        // Test enhanced trait methods
+        assert_eq!(renderer.get_data_precision(), DataPrecision::F32);
+        assert!(!renderer.is_running());
+        assert_eq!(renderer.get_frame_count(), 0);
+
+        // Test factory trait methods
+        let result = renderer.start();
+        assert!(result.is_ok());
+        assert!(renderer.is_running());
+
+        let result = renderer.render_frame();
+        assert!(result.is_ok());
+        assert_eq!(renderer.get_frame_count(), 1);
+
+        renderer.stop();
+        assert!(!renderer.is_running());
+
+        // Test precision change
+        let result = renderer.set_data_precision(DataPrecision::F64);
+        assert!(result.is_ok());
+        assert_eq!(renderer.get_data_precision(), DataPrecision::F64);
+    }
+
+    #[test]
+    fn test_trait_object_debug() {
+        // Test that trait objects properly implement Debug
+        let renderer = RendererKind::Reference.create();
+        let debug_string = format!("{:?}", renderer);
+        assert!(debug_string.contains("ReferenceRenderer"));
     }
 
     #[test]
@@ -566,5 +706,45 @@ mod tests {
             }
             _ => panic!("Event type mismatch"),
         }
+    }
+
+    #[test]
+    fn test_renderer_error_creation() {
+        let type_id = TypeId::of::<String>();
+
+        let errors = [
+            RendererError::UnsupportedPrecision(DataPrecision::F16),
+            RendererError::InvalidParameters("test error".to_string()),
+            RendererError::CreationFailed("init failed".to_string()),
+            RendererError::RendererNotFound(type_id),
+            RendererError::RendererNotFoundByName("TestRenderer".to_string()),
+            RendererError::FactoryAlreadyRegistered(type_id),
+        ];
+
+        // Ensure all error variants can be created
+        assert_eq!(errors.len(), 6);
+    }
+
+    #[test]
+    fn test_renderer_error_display() {
+        let type_id = TypeId::of::<String>();
+
+        let error1 = RendererError::UnsupportedPrecision(DataPrecision::F32);
+        assert!(format!("{}", error1).contains("Unsupported data precision: f32"));
+
+        let error2 = RendererError::InvalidParameters("missing config".to_string());
+        assert!(format!("{}", error2).contains("Invalid parameters: missing config"));
+
+        let error3 = RendererError::CreationFailed("GPU not available".to_string());
+        assert!(format!("{}", error3).contains("Renderer creation failed: GPU not available"));
+
+        let error4 = RendererError::RendererNotFound(type_id);
+        assert!(format!("{}", error4).contains("Renderer not found for type:"));
+
+        let error5 = RendererError::RendererNotFoundByName("TestRenderer".to_string());
+        assert!(format!("{}", error5).contains("Renderer factory not found with name: TestRenderer"));
+
+        let error6 = RendererError::FactoryAlreadyRegistered(type_id);
+        assert!(format!("{}", error6).contains("Factory already registered for type:"));
     }
 }

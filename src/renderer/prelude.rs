@@ -6,8 +6,7 @@
 //!
 //! # Example
 //! ```
-//! use crate::renderer::manager::RendererManager;
-//! use crate::renderer::factory::MockRendererFactory;
+//! use crate::renderer::prelude::*;
 //!
 //! // Now you have access to all core renderer types
 //! let manager = RendererManager::new();
@@ -26,6 +25,7 @@ pub use super::factory::{RendererFactory, MockRenderer, MockRendererFactory};
 pub use super::manager::RendererManager;
 
 // Concrete renderer implementations
+pub use super::cpu_reference::CpuReferenceRenderer;
 #[cfg(feature = "gpu")]
 pub use super::gpu_optional::GpuOptionalRenderer;
 
@@ -36,7 +36,7 @@ pub use super::async_communication::sender::{BufferedAsyncSender, ChannelConfigu
 pub use super::capabilities;
 
 // OpenGL3 renderer system
-pub use super::custom::opengl3::{OpenGL3Renderer, OpenGL3RendererConfig, OpenGL3RendererBuilder};
+pub use super::opengl3::{OpenGL3Renderer, OpenGL3RendererConfig, OpenGL3RendererBuilder};
 
 // World and scene management
 pub use super::world::{World, Camera, GaussianSplat, Point3D, PrecisionPoint3D};
