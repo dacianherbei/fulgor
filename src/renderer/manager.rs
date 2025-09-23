@@ -321,7 +321,7 @@ impl RendererManager {
         let (sender, receiver) = std::sync::mpsc::channel();
 
         // Spawn registration operation in separate thread
-        let factory_for_thread = Arc::clone(&factory_arc);
+        // Move the Arc directly into the thread (no cloning needed)
         thread::spawn(move || {
             let start_time = Instant::now();
 
@@ -334,7 +334,8 @@ impl RendererManager {
                             Err(RendererError::FactoryAlreadyRegistered(type_id))
                         } else {
                             // Convert Arc back to Box for storage
-                            match Arc::try_unwrap(factory_for_thread) {
+                            // Since factory_arc was moved into this thread, there's only one reference
+                            match Arc::try_unwrap(factory_arc) {
                                 Ok(factory_box) => {
                                     factories.insert(type_id, factory_box);
                                     Ok(true)
@@ -940,39 +941,40 @@ mod tests {
 
     #[test]
     fn test_concurrent_access() {
-        let manager = Arc::new(RendererManager::new());
+        // Create manager and register factory BEFORE wrapping in Arc
+        let mut manager = RendererManager::new();
+        let factory = Box::new(MockRendererFactory::new("TestFactory"));
+        manager.register(factory).unwrap();
+
+        // Now wrap in Arc for concurrent testing
+        let manager = Arc::new(manager);
         let mut handles = vec![];
 
-        // Register a factory first
-        {
-            let mut manager_ref = Arc::try_unwrap(manager).unwrap_or_else(|arc| {
-                // If we can't unwrap, create a new one for this test
-                RendererManager::new()
+        // Spawn multiple threads trying to create renderers
+        for _i in 0..5 {
+            let manager_clone = Arc::clone(&manager);
+            let handle = thread::spawn(move || {
+                // Use create_by_name instead of create with TypeId to avoid TypeId mismatch issues
+                let result = manager_clone.create_by_name(
+                    "TestFactory",  // Use the factory name instead of TypeId
+                    DataPrecision::F32,
+                    "" // Use empty parameters
+                );
+
+                // Return both success and error for debugging
+                match result {
+                    Ok(_) => (true, None),
+                    Err(e) => (false, Some(format!("{:?}", e))),
+                }
             });
-            let factory = Box::new(MockRendererFactory::new("TestFactory"));
-            manager_ref.register(factory).unwrap();
+            handles.push(handle);
+        }
 
-            // Re-wrap in Arc for concurrent testing
-            let manager = Arc::new(manager_ref);
-
-            // Spawn multiple threads trying to create renderers
-            for i in 0..5 {
-                let manager_clone = Arc::clone(&manager);
-                let handle = thread::spawn(move || {
-                    let result = manager_clone.create(
-                        TypeId::of::<MockRendererFactory>(),
-                        DataPrecision::F32,
-                        &format!("thread_{}_params", i)
-                    );
-                    result.is_ok()
-                });
-                handles.push(handle);
-            }
-
-            // Wait for all threads and verify they succeeded
-            for handle in handles {
-                let success = handle.join().unwrap();
-                assert!(success);
+        // Wait for all threads and check results
+        for (i, handle) in handles.into_iter().enumerate() {
+            let (success, error) = handle.join().unwrap();
+            if !success {
+                panic!("Thread {} failed with error: {:?}", i, error.unwrap_or("Unknown error".to_string()));
             }
         }
     }

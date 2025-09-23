@@ -267,8 +267,14 @@ where
     ///
     /// # Example
     /// ```rust
+    /// # use fulgor::renderer::async_communication::sender::BufferedAsyncSender;
+    /// # use fulgor::renderer::RendererEvent;
+    /// # #[tokio::main]
+    /// # async fn main() {
+    /// let (sender, _rx) = BufferedAsyncSender::<RendererEvent>::new_unbounded(None);
     /// let dropped_events = sender.get_dropped_count();
     /// println!("Total dropped events: {}", dropped_events);
+    /// # }
     /// ```
     pub fn get_dropped_count(&self) -> u64 {
         // Direct atomic load with relaxed ordering - no locks, no blocking, no performance penalty
