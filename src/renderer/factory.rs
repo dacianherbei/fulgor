@@ -294,8 +294,6 @@ impl RendererFactory for MockRendererFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use super::*;
     use std::any::TypeId;
 
     #[test]

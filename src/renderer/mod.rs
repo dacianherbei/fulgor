@@ -12,7 +12,6 @@ mod manager;
 use std::any::TypeId;
 use crate::renderer::cpu_reference::CpuReferenceRenderer;
 use std::collections::HashMap;
-use std::error::Error;
 use std::fmt;
 use std::sync::{mpsc, Arc, Mutex};
 use std::sync::atomic::AtomicU64;
@@ -86,7 +85,7 @@ pub enum RendererKind {
 
 impl RendererKind {
     pub fn all() -> Vec<Self> {
-        let mut kinds = vec![RendererKind::CpuReference];
+        let kinds = vec![RendererKind::CpuReference];
         #[cfg(feature = "gpu")]
         kinds.push(RendererKind::GpuOptional);
         kinds
@@ -397,7 +396,7 @@ impl futures::Stream for RendererEventStream {
 /// Defines the floating-point precision for rendering operations,
 /// allowing for performance vs quality trade-offs across different
 /// hardware capabilities.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum DataPrecision {
     /// Half precision floating point (16-bit)
     F16,
@@ -441,9 +440,24 @@ pub enum RendererError {
     /// This typically occurs when trying to retrieve an unregistered renderer.
     RendererNotFound(TypeId),
 
+    /// No renderer factory was found with the specified name.
+    /// Contains the name that was searched for.
+    RendererNotFoundByName(String),
+
     /// Attempted to register a factory for a renderer type that's already registered.
     /// Contains the TypeId of the conflicting renderer type.
     FactoryAlreadyRegistered(TypeId),
+
+    /// No factories were found that support the specified capability.
+    /// Contains the capability that was searched for.
+    NoFactoriesWithCapability(String),
+
+    /// No factories were found that support the specified data precision.
+    /// Contains the precision that was searched for.
+    NoFactoriesWithPrecision(DataPrecision),
+
+    /// The factory registry is empty (no factories have been registered).
+    EmptyFactoryRegistry,
 }
 
 impl fmt::Display for RendererError {
@@ -461,16 +475,27 @@ impl fmt::Display for RendererError {
             RendererError::RendererNotFound(type_id) => {
                 write!(f, "Renderer not found for type: {:?}", type_id)
             },
+            RendererError::RendererNotFoundByName(name) => {
+                write!(f, "Renderer factory not found with name: '{}'", name)
+            },
             RendererError::FactoryAlreadyRegistered(type_id) => {
                 write!(f, "Factory already registered for type: {:?}", type_id)
+            },
+            RendererError::NoFactoriesWithCapability(capability) => {
+                write!(f, "No factories found with capability: '{}'", capability)
+            },
+            RendererError::NoFactoriesWithPrecision(precision) => {
+                write!(f, "No factories found supporting precision: {}", precision)
+            },
+            RendererError::EmptyFactoryRegistry => {
+                write!(f, "No renderer factories have been registered")
             },
         }
     }
 }
 
-impl Error for RendererError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        // None of our error variants wrap other errors
+impl std::error::Error for RendererError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         None
     }
 }
@@ -479,6 +504,7 @@ impl Error for RendererError {
 mod tests {
     use super::*;
     use std::any::TypeId;
+    use std::error::Error;
 
     #[test]
     fn test_data_precision_creation() {
