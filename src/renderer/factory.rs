@@ -3,6 +3,34 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use crate::renderer::{DataPrecision, RendererError};
 
+pub fn parse_parameters(parameters: &str) -> HashMap<String, String> {
+    let mut result = HashMap::new();
+
+    if parameters.is_empty() {
+        return result;
+    }
+
+    for pair in parameters.split(',') {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+
+        if let Some((key, value)) = pair.split_once('=') {
+            let key = key.trim().to_string();
+            let value = value.trim().to_string();
+            if !key.is_empty() {
+                result.insert(key, value);
+            }
+        } else {
+            // Handle parameters without values as boolean flags
+            result.insert(pair.to_string(), "true".to_string());
+        }
+    }
+
+    result
+}
+
 /// Information about a registered renderer in the factory system.
 ///
 /// This struct contains metadata about a renderer that can be used by the
@@ -101,6 +129,8 @@ pub trait Renderer: Send + Sync + Debug + Any {
 
     /// Get the renderer's name
     fn name(&self) -> &'static str;
+
+    fn render_frame(&mut self) -> Result<(), String>;
 }
 
 /// Factory trait for creating renderer instances
@@ -184,6 +214,10 @@ impl Renderer for MockRenderer {
 
     fn name(&self) -> &'static str {
         self.name
+    }
+
+    fn render_frame(&mut self) -> Result<(), String> {
+        todo!()
     }
 }
 
@@ -684,5 +718,38 @@ mod tests {
         } else {
             panic!("Expected InvalidParameters error with preserved message");
         }
+    }
+
+    #[test]
+    fn test_parse_parameters() {
+        // Test empty parameters
+        let params = parse_parameters("");
+        assert!(params.is_empty());
+
+        // Test single parameter
+        let params = parse_parameters("threads=4");
+        assert_eq!(params.get("threads"), Some(&"4".to_string()));
+
+        // Test multiple parameters
+        let params = parse_parameters("threads=4,quality=high,debug=true");
+        assert_eq!(params.get("threads"), Some(&"4".to_string()));
+        assert_eq!(params.get("quality"), Some(&"high".to_string()));
+        assert_eq!(params.get("debug"), Some(&"true".to_string()));
+
+        // Test parameters with spaces
+        let params = parse_parameters(" threads = 4 , quality = high ");
+        assert_eq!(params.get("threads"), Some(&"4".to_string()));
+        assert_eq!(params.get("quality"), Some(&"high".to_string()));
+
+        // Test boolean flags (no value)
+        let params = parse_parameters("debug,verbose");
+        assert_eq!(params.get("debug"), Some(&"true".to_string()));
+        assert_eq!(params.get("verbose"), Some(&"true".to_string()));
+
+        // Test mixed parameters
+        let params = parse_parameters("threads=8,debug,quality=ultra");
+        assert_eq!(params.get("threads"), Some(&"8".to_string()));
+        assert_eq!(params.get("debug"), Some(&"true".to_string()));
+        assert_eq!(params.get("quality"), Some(&"ultra".to_string()));
     }
 }

@@ -16,11 +16,13 @@
 //! ```
 
 // Core types and traits
-pub use super::{Renderer, RendererKind, RendererEvent, RendererEventStream,
+pub use super::{RendererKind, RendererEvent, RendererEventStream,
                 DataPrecision, RendererError, RendererInfo};
 
+pub use super::factory::Renderer;
+
 // Manager for factory registration and renderer creation
-pub use super::RendererManager;
+pub use super::manager::RendererManager;
 
 // Concrete renderer implementations
 pub use super::cpu_reference::CpuReferenceRenderer;

@@ -15,6 +15,7 @@ pub enum ChannelConfiguration {
 }
 
 /// Internal state of the BufferedAsyncSender.
+#[derive(Debug)]
 struct BufferedAsyncSenderInner {
     /// Optional bounded sender for bounded channel configuration.
     bounded_sender: Option<mpsc::Sender<RendererEvent>>,
@@ -30,7 +31,7 @@ struct BufferedAsyncSenderInner {
     dropped_events_counter: Arc<AtomicU64>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BufferedAsyncSender<EventType = RendererEvent>
 where
     EventType: Clone + Send + Sync + 'static,
