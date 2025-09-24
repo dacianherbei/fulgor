@@ -5,7 +5,7 @@ use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 use std::thread;
-
+use tokio::task::JoinHandle;
 use crate::renderer::{BufferedAsyncSender, DataPrecision, RendererError, RendererEvent, RendererEventStream, RendererFactory, RendererInfo};
 use crate::renderer::Renderer;
 
@@ -27,6 +27,7 @@ pub struct RendererManager {
     /// Map of TypeId to factory instances, protected by mutex for thread safety
     factories: Arc<Mutex<HashMap<TypeId, Box<dyn RendererFactory>>>>,
     renderers: Mutex<HashMap<RendererId, Box<dyn Renderer>>>,
+    tasks: Mutex<HashMap<RendererId, JoinHandle<()>>>,
     active: Mutex<Option<RendererId>>,
 
     // subscribers
@@ -42,28 +43,13 @@ impl RendererManager {
         Self {
             factories: Arc::new(Mutex::new(HashMap::new())),
             renderers: Mutex::new(HashMap::new()),
+            tasks: Mutex::new(HashMap::new()),
             active: Mutex::new(None),
             sender: Mutex::new(None),
             async_sinks: Mutex::new(Vec::new()),
             buffered_async_sender: Mutex::new(None),
             next_id: AtomicU64::new(1)
         }
-    }
-
-    /// Subscribe synchronously (std channel).
-    pub fn subscribe(&mut self) -> mpsc::Receiver<RendererEvent> {
-        let (tx, rx) = mpsc::channel();
-        self.sender = Some(tx);
-        rx
-    }
-
-    /// Subscribe asynchronously (returns a Stream).
-    pub fn async_subscribe(&self) -> RendererEventStream {
-        let sink = Arc::new(Mutex::new(Vec::new()));
-        {
-            self.async_sinks.push(sink.clone());
-        }
-        RendererEventStream { buffer: sink }
     }
 
     /// Subscribe using BufferedAsyncSender with bounded channel.
@@ -100,25 +86,6 @@ impl RendererManager {
         self.buffered_async_sender.clone()
     }
 
-    /// Notify all subscribers including the buffered async sender.
-    async fn notify_async(&self, event: RendererEvent) {
-        // Sync
-        if let Some(sender) = &self.sender {
-            let _ = sender.send(event.clone());
-        }
-
-        // Async sinks
-        for sink in &self.async_sinks {
-            sink.lock().unwrap().push(event.clone());
-        }
-
-        // Buffered async sender
-        if let Some(buffered_sender) = &self.buffered_async_sender {
-            let sender = self.sender.clone();
-            let _ = sender.send_event(event).await;
-        }
-    }
-
     fn notify(&self, event: RendererEvent) {
         // Sync
         if let Some(sender) = &self.sender {
@@ -130,81 +97,47 @@ impl RendererManager {
         }
     }
 
-    pub fn add_renderer(&self, renderer: Box<dyn Renderer>) -> RendererId {
-        let id = RendererId(self.next_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+    /// Register a renderer (created by the factory) and spawn its task.
+    pub fn add_renderer(&self, id: RendererId, mut renderer: Box<dyn Renderer>) {
+        let fut = renderer.run();
+        let handle = tokio::spawn(fut);
+
         self.renderers.lock().unwrap().insert(id, renderer);
-        id
+        self.tasks.lock().unwrap().insert(id, handle);
     }
 
-    pub async fn start_async(&self, id:RendererId) -> Result<(), String> {
-        let result = {
-            self.renderers.entry(id).or_insert_with(|| id);
-            if let Some(renderer) = self.renderers.get_mut(&id) {
-                renderer.start()?;
-                self.active = Some(id);
-                Ok(())
-            } else {
-                Err(format!("Renderer {:?} not found", id))
-            }
-        };
-
-        if result.is_ok() {
-            self.notify_async(RendererEvent::Started(id)).await;
-            self.notify_async(RendererEvent::Switched(Some(id))).await;
-        }
-
-        result
+    /// Start a renderer by id
+    pub fn start(&self, id: RendererId) {
+        let mut active = self.active.lock().unwrap();
+        *active = Some(id);
+        // Broadcast event if you want:
+        println!("RendererManager: started {:?}", id);
     }
 
-    pub fn start(&self, id: RendererId) -> Result<(), String> {
-        let mut renderers = self.renderers.lock().unwrap();
-        if let Some(renderer) = renderers.get_mut(&id) {
-            renderer.start()?;
-            *self.active.lock().unwrap() = Some(id);
-            drop(renderers);
-            self.notify(RendererEvent::Started(id));
-            self.notify(RendererEvent::Switched(Some(id)));
-            Ok(())
-        } else {
-            Err(format!("Renderer {:?} not found", id))
-        }
-    }
-
-    pub async fn stop_async(&self, id: RendererId) {
-        let (was_active, stopped) = {
-            let stopped = if let Some(renderer) = self.renderers.get_mut(&id) {
-                renderer.stop();
-                true
-            } else {
-                false
-            };
-            let was_active = self.active == Some(id);
-            if was_active {
-                self.active = None;
-            }
-            (was_active, stopped)
-        };
-
-        if stopped {
-            self.notify_async(RendererEvent::Stopped(id)).await;
-            if was_active {
-                self.notify_async(RendererEvent::Switched(None)).await;
-            }
-        }
-    }
-
+    /// Stop a renderer by id
     pub fn stop(&self, id: RendererId) {
-        if let Some(renderer) = self.renderers.get_mut(&id) {
-            renderer.stop();
-            let was_active = self.active == Some(id);
-            if was_active {
-                self.active = None;
-            }
-            // drop(inner);
-            self.notify(RendererEvent::Stopped(id));
-            if was_active {
-                self.notify(RendererEvent::Switched(None));
-            }
+        // Send shutdown event to the renderer via its sender
+        if let Some(r) = self.renderers.lock().unwrap().get_mut(&id) {
+            let _ = r.sender().send(RendererEvent::Shutdown(id));
+        }
+
+        if let Some(handle) = self.tasks.lock().unwrap().remove(&id) {
+            tokio::spawn(async move {
+                let _ = handle.await;
+            });
+        }
+
+        if self.active.lock().unwrap() == &Some(id) {
+            *self.active.lock().unwrap() = None;
+        }
+        println!("RendererManager: stopped {:?}", id);
+    }
+
+    /// Stop all renderers
+    pub fn stop_all(&self) {
+        let ids: Vec<_> = self.renderers.lock().unwrap().keys().cloned().collect();
+        for id in ids {
+            self.stop(id);
         }
     }
 
@@ -219,24 +152,6 @@ impl RendererManager {
             }
             None => Err("No active renderer".into()),
         }
-    }
-
-    pub async fn switch_async(&self, id: RendererId) -> Result<(), String> {
-        {
-            if let Some(active) = self.active {
-                if active == id {
-                    return Ok(()); // already active
-                }
-                if let Some(renderer) = self.renderers.get_mut(&self.active) {
-                    renderer.stop();
-                }
-                self.active = None;
-            }
-        }
-
-        self.notify_async(RendererEvent::Stopped(id)).await;
-        self.notify_async(RendererEvent::Switched(None)).await;
-        self.start_async(id).await
     }
 
     pub fn switch(&self, id: RendererId) -> Result<(), String> {
@@ -255,31 +170,6 @@ impl RendererManager {
             }
         }
         self.start(id)
-    }
-
-    pub async fn stop_all_async(&self) {
-        let renderers_ids: Vec<RendererId> = {
-            let renderers_ids: Vec<_> = self.renderers.keys().cloned().collect();
-            for (_, renderer) in renderers_ids.iter_mut() {
-                renderer.stop();
-            }
-            self.active = None;
-            renderers_ids
-        };
-
-        for id in renderers_ids {
-            self.notify_async(RendererEvent::Stopped(id)).await;
-        }
-        self.notify_async(RendererEvent::Switched(None)).await;
-    }
-
-    pub fn stop_all(&self) {
-        for (kind, renderer) in self.renderers.iter_mut() {
-            renderer.stop();
-            self.notify(RendererEvent::Stopped(*kind));
-        }
-        self.active = None;
-        self.notify(RendererEvent::Switched(None));
     }
 
     /// Register a new renderer factory with timeout protection.

@@ -15,7 +15,6 @@ use std::fmt::{self, Debug};
 use std::sync::{Arc, Mutex};
 pub use crate::renderer::async_communication::sender::BufferedAsyncSender;
 pub use factory::{RendererInfo, RendererFactory, MockRenderer, MockRendererFactory};
-use std::any::Any;
 use std::future::Future;
 use std::pin::Pin;
 use tokio::sync::mpsc::{UnboundedReceiver};
@@ -305,7 +304,6 @@ impl Renderer for ReferenceRenderer {
             return Err(format!("Unsupported precision: {}", precision));
         }
 
-        let old_precision = self.precision;
         self.precision = precision;
 
         // In a real implementation, this would trigger a DataPrecisionChanged event
@@ -668,7 +666,7 @@ mod tests {
 
         cpu_renderer.stop();
 
-        let mut ref_renderer = ReferenceRenderer::new();
+        let ref_renderer = ReferenceRenderer::new();
         assert_eq!(ref_renderer.name(), "ReferenceRenderer");
 
         #[cfg(feature = "gpu")]
@@ -717,6 +715,7 @@ mod tests {
     #[test]
     fn test_data_precision_changed_event() {
         let event = RendererEvent::DataPrecisionChanged {
+            id: RendererId(1),
             old_precision: DataPrecision::F32,
             new_precision: DataPrecision::F64,
         };
@@ -724,7 +723,7 @@ mod tests {
         // Test that the event can be created and cloned
         let cloned_event = event.clone();
         match cloned_event {
-            RendererEvent::DataPrecisionChanged { old_precision, new_precision } => {
+            RendererEvent::DataPrecisionChanged { old_precision, new_precision, .. } => {
                 assert_eq!(old_precision, DataPrecision::F32);
                 assert_eq!(new_precision, DataPrecision::F64);
             }

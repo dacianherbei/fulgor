@@ -530,7 +530,6 @@ impl Renderer for OpenGL3Renderer {
             }
         }
 
-        let old_precision = self.current_precision;
         self.current_precision = precision;
 
         // In a real implementation, this would:
@@ -703,7 +702,7 @@ mod tests {
 
     #[test]
     fn test_opengl3_renderer_creation() {
-        let mut renderer = OpenGL3Renderer::default();
+        let renderer = OpenGL3Renderer::default();
         assert_eq!(renderer.name(), "OpenGL3Renderer");
         assert_eq!(renderer.get_data_precision(), DataPrecision::F32);
         assert!(!renderer.is_running());

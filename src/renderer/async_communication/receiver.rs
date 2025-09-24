@@ -462,7 +462,7 @@ mod tests {
     use super::*;
     use crate::renderer::{RendererEvent};
     use futures::StreamExt;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration};
     use crate::renderer::manager::RendererId;
 
     #[tokio::test]
