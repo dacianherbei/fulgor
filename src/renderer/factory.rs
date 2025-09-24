@@ -234,7 +234,7 @@ impl Renderer for MockRenderer {
         self.sender.clone()
     }
 
-    fn run(&mut self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+    fn run(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
         Box::pin(async move {
             while let Some(event) = self.receiver.recv().await {
                 match event {

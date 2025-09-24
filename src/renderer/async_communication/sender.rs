@@ -292,45 +292,59 @@ where
     /// # Returns
     /// Result indicating success or failure of the send operation
     pub async fn send_event(&self, event: RendererEvent) -> Result<(), mpsc::error::SendError<RendererEvent>> {
-        match self.inner.lock() {
-            Ok(guard) => {
-                match guard.configuration {
-                    ChannelConfiguration::Bounded { .. } => {
-                        if let Some(ref sender) = guard.bounded_sender {
-                            match sender.send(event.clone()).await {
-                                Ok(()) => Ok(()),
-                                Err(send_error) => {
-                                    // Channel is closed, count as dropped
-                                    self.dropped_events_counter.fetch_add(1, Ordering::Relaxed);
-                                    Err(send_error)
-                                }
+        // Create enum to hold the sender type without the guard
+        enum SenderType {
+            Bounded(mpsc::Sender<RendererEvent>),
+            Unbounded(mpsc::UnboundedSender<RendererEvent>),
+        }
+
+        // Extract sender and drop the guard
+        let sender_type = {
+            match self.inner.lock() {
+                Ok(guard) => {
+                    match guard.configuration {
+                        ChannelConfiguration::Bounded { .. } => {
+                            if let Some(ref sender) = guard.bounded_sender {
+                                Some(SenderType::Bounded(sender.clone()))
+                            } else {
+                                None
                             }
-                        } else {
-                            // No sender available, count as dropped
-                            self.dropped_events_counter.fetch_add(1, Ordering::Relaxed);
-                            Err(mpsc::error::SendError(event))
                         }
-                    }
-                    ChannelConfiguration::Unbounded => {
-                        if let Some(ref sender) = guard.unbounded_sender {
-                            match sender.send(event) {
-                                Ok(()) => Ok(()),
-                                Err(send_error) => {
-                                    // Channel is closed, count as dropped
-                                    self.dropped_events_counter.fetch_add(1, Ordering::Relaxed);
-                                    Err(send_error)
-                                }
+                        ChannelConfiguration::Unbounded => {
+                            if let Some(ref sender) = guard.unbounded_sender {
+                                Some(SenderType::Unbounded(sender.clone()))
+                            } else {
+                                None
                             }
-                        } else {
-                            // No sender available, count as dropped
-                            self.dropped_events_counter.fetch_add(1, Ordering::Relaxed);
-                            Err(mpsc::error::SendError(event))
                         }
                     }
                 }
+                Err(_) => None,
             }
-            Err(_) => {
-                // Mutex is poisoned, count as dropped
+        }; // <-- Guard is dropped here
+
+        // Now handle the send without holding the guard
+        match sender_type {
+            Some(SenderType::Bounded(sender)) => {
+                match sender.send(event.clone()).await {
+                    Ok(()) => Ok(()),
+                    Err(send_error) => {
+                        self.dropped_events_counter.fetch_add(1, Ordering::Relaxed);
+                        Err(send_error)
+                    }
+                }
+            }
+            Some(SenderType::Unbounded(sender)) => {
+                match sender.send(event) {
+                    Ok(()) => Ok(()),
+                    Err(send_error) => {
+                        self.dropped_events_counter.fetch_add(1, Ordering::Relaxed);
+                        Err(send_error)
+                    }
+                }
+            }
+            None => {
+                // No sender available or mutex poisoned
                 self.dropped_events_counter.fetch_add(1, Ordering::Relaxed);
                 Err(mpsc::error::SendError(event))
             }

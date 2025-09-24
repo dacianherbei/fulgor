@@ -26,7 +26,7 @@ impl RendererId {
 pub struct RendererManager {
     /// Map of TypeId to factory instances, protected by mutex for thread safety
     factories: Arc<Mutex<HashMap<TypeId, Box<dyn RendererFactory>>>>,
-    renderers: Mutex<HashMap<RendererId, Box<dyn Renderer>>>,
+    renderers: Mutex<HashMap<RendererId, Arc<Mutex<Box<dyn Renderer>>>>>,
     tasks: Mutex<HashMap<RendererId, JoinHandle<()>>>,
     active: Mutex<Option<RendererId>>,
 
@@ -122,16 +122,29 @@ impl RendererManager {
     /// Register a renderer (created by the factory) and spawn its task.
 
     /// Register a renderer and spawn its run loop.
-    pub fn add_renderer(&self, id: RendererId, mut renderer: Box<dyn Renderer>) {
-        let fut = renderer.run();
+    pub fn add_renderer(&self, id: RendererId, renderer: Box<dyn Renderer>) {
+        let renderer_arc = Arc::new(Mutex::new(renderer));
+
+        // Clone the Arc for the future
+        let renderer_for_future = Arc::clone(&renderer_arc);
+
+        let fut = async move {
+            // Get the future without holding the guard across await
+            let future = {
+                let mut renderer = renderer_for_future.lock().unwrap();
+                renderer.run()
+            }; // Guard is dropped here
+
+            // Now await the future
+            future.await;
+        };
+
         let handle = tokio::spawn(fut);
 
-        self.renderers.lock().unwrap().insert(id, renderer);
+        self.renderers.lock().unwrap().insert(id, renderer_arc);
         self.tasks.lock().unwrap().insert(id, handle);
-
         self.notify(RendererEvent::RendererCreated { id });
     }
-
     /// Start a renderer by id (marks it active).
 
     pub fn start(&self, id: RendererId) {
@@ -142,20 +155,28 @@ impl RendererManager {
 
     /// Stop a renderer by id.
     pub fn stop(&self, id: RendererId) {
-        if let Some(r) = self.renderers.lock().unwrap().get_mut(&id) {
-            let _ = r.sender().send(RendererEvent::Shutdown(id));
+        // Send shutdown signal to renderer
+        if let Some(renderer_arc) = self.renderers.lock().unwrap().get(&id) {
+            if let Ok(renderer) = renderer_arc.try_lock() {
+                let _ = renderer.sender().send(RendererEvent::Shutdown(id));
+            }
         }
 
+        // Clean up task
         if let Some(handle) = self.tasks.lock().unwrap().remove(&id) {
             tokio::spawn(async move {
                 let _ = handle.await;
             });
         }
 
+        // Update active state
         let was_active = *self.active.lock().unwrap() == Some(id);
         if was_active {
             *self.active.lock().unwrap() = None;
         }
+
+        // Remove from renderers map
+        self.renderers.lock().unwrap().remove(&id);
 
         self.notify(RendererEvent::Stopped(id));
         if was_active {
@@ -179,34 +200,21 @@ impl RendererManager {
     }
 
     pub fn render_frame(&self, id: RendererId) -> Result<(), String> {
-        match self.active {
-            Some(id) => {
-                if let Some(renderer) = self.renderers.get_mut(&id) {
+        let active_id = *self.active.lock().unwrap();
+
+        if active_id == Some(id) {
+            if let Some(renderer_arc) = self.renderers.lock().unwrap().get(&id) {
+                if let Ok(mut renderer) = renderer_arc.try_lock() {
                     renderer.render_frame()
                 } else {
-                    Err("Active renderer not found".into())
+                    Err("Renderer is busy".into())
                 }
+            } else {
+                Err("Active renderer not found".into())
             }
-            None => Err("No active renderer".into()),
+        } else {
+            Err("No active renderer".into())
         }
-    }
-
-    pub fn switch(&self, id: RendererId) -> Result<(), String> {
-        {
-            if let Some(active) = self.active {
-                if active == id {
-                    return Ok(()); // already active
-                }
-                if let Some(renderer) = self.renderers.get_mut(&active) {
-                    renderer.stop();
-                }
-                self.active = None;
-                // drop(inner);
-                self.notify(RendererEvent::Stopped(id));
-                self.notify(RendererEvent::Switched(None));
-            }
-        }
-        self.start(id)
     }
 
     /// Register a new renderer factory with timeout protection.
