@@ -10,7 +10,7 @@ use crate::renderer::{BufferedAsyncSender, DataPrecision, RendererError, Rendere
 use crate::renderer::Renderer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RendererId(u64);
+pub struct RendererId(pub u64);
 
 impl RendererId {
     pub fn new(id: u64) -> Self { Self(id) }

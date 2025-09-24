@@ -1,7 +1,9 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt::Debug;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 pub(crate) use crate::renderer::{DataPrecision, Renderer, RendererError};
+use crate::renderer::{BufferedAsyncSender, RendererEvent};
 
 pub fn parse_parameters(parameters: &str) -> HashMap<String, String> {
     let mut result = HashMap::new();
@@ -161,14 +163,20 @@ pub struct MockRenderer {
     name: &'static str,
     started: bool,
     precision: DataPrecision,
+
+    sender: BufferedAsyncSender<RendererEvent>,
+    receiver: UnboundedReceiver<RendererEvent>
 }
 
 impl MockRenderer {
     pub fn new(name: &'static str, precision: DataPrecision) -> Self {
+        let (buffered_sender, buffered_receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(Option::<usize>::Some(100));
         Self {
             name,
             started: false,
             precision,
+            sender: buffered_sender,
+            receiver: buffered_receiver
         }
     }
 
@@ -182,6 +190,7 @@ impl MockRenderer {
 }
 
 impl Renderer for MockRenderer {
+
     fn set_data_precision(&mut self, precision: DataPrecision) -> Result<DataPrecision, String> {
         todo!()
     }
@@ -217,6 +226,10 @@ impl Renderer for MockRenderer {
 
     fn render_frame(&mut self) -> Result<(), String> {
         todo!()
+    }
+
+    fn sender(&self) -> BufferedAsyncSender<RendererEvent> {
+        self.sender.clone()
     }
 }
 

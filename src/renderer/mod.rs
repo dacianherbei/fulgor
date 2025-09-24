@@ -9,7 +9,6 @@ pub mod capabilities;
 pub mod custom;
 pub mod world;
 mod manager;
-mod system;
 
 use std::any::TypeId;
 use std::fmt::{self, Debug};
@@ -17,7 +16,8 @@ use std::sync::{Arc, Mutex};
 pub use crate::renderer::async_communication::sender::BufferedAsyncSender;
 pub use factory::{RendererInfo, RendererFactory, MockRenderer, MockRendererFactory};
 use std::any::Any;
-use crate::renderer::manager::RendererId;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+pub use crate::renderer::manager::RendererId;
 
 /// Events emitted by renderer components in the fulgor engine.
 ///
@@ -211,6 +211,9 @@ pub struct ReferenceRenderer {
 
     /// Total number of frames rendered
     frame_count: u64,
+
+    sender: BufferedAsyncSender<RendererEvent>,
+    receiver: UnboundedReceiver<RendererEvent>
 }
 
 impl ReferenceRenderer {
@@ -218,10 +221,13 @@ impl ReferenceRenderer {
     ///
     /// The renderer starts with F32 precision and in a stopped state.
     pub fn new() -> Self {
+        let (buffered_sender, buffered_receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(Option::<usize>::Some(100));
         Self {
             precision: DataPrecision::F32,
             is_running: false,
             frame_count: 0,
+            sender: buffered_sender,
+            receiver: buffered_receiver
         }
     }
 
@@ -232,6 +238,10 @@ impl ReferenceRenderer {
             is_running: false,
             frame_count: 0,
         }
+    }
+
+    pub fn sender(&self) -> BufferedAsyncSender<RendererEvent> {
+        self.sender.clone()
     }
 }
 

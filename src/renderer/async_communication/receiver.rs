@@ -30,20 +30,21 @@ use super::async_channel::AsyncChannelConfig;
 ///
 /// ```rust
 /// use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-/// use fulgor::renderer::{RendererEvent, RendererKind};
+/// use fulgor::renderer::RendererEvent;
+/// use fulgor::renderer::RendererId;
 /// use futures::StreamExt;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let config = AsyncChannelConfig::<f64>::bounded(1000);
+/// let config = AsyncChannelConfig::bounded(1000);
 /// let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
 /// let mut event_receiver = AsyncEventReceiver::new(receiver, config);
 ///
 /// // Send an event
 /// sender.send(RendererEvent::FrameRendered {
-///     renderer_kind: RendererKind::CpuReference,
+///     id: RendererId(1),
 ///     frame_number: 1,
 ///     frame_time_microseconds: 0,
-///     render_time_ns: 1667,
+///     render_time_ns: 1667
 /// }).await?;
 ///
 /// // Receive using async method
@@ -63,25 +64,23 @@ use super::async_channel::AsyncChannelConfig;
 /// # }
 /// ```
 #[derive(Debug)]
-pub struct AsyncEventReceiver<EventType, NumberType = f64>
+pub struct AsyncEventReceiver<EventType>
 where
-    EventType: Clone + Send + Sync + 'static,
-    NumberType: Copy + Clone + Send + Sync + 'static,
+    EventType: Clone + Send + Sync + 'static
 {
     /// The underlying async channel receiver
     receiver: async_channel::Receiver<EventType>,
 
     /// Configuration for this receiver instance
-    config: AsyncChannelConfig<NumberType>,
+    config: AsyncChannelConfig,
 
     /// Thread-safe counter for tracking received events
     received_events_count: Arc<Mutex<u64>>,
 }
 
-impl<EventType, NumberType> AsyncEventReceiver<EventType, NumberType>
+impl<EventType> AsyncEventReceiver<EventType>
 where
-    EventType: Clone + Send + Sync + 'static,
-    NumberType: Copy + Clone + Send + Sync + 'static,
+    EventType: Clone + Send + Sync + 'static
 {
     /// Creates a new AsyncEventReceiver with the specified configuration.
     ///
@@ -100,7 +99,7 @@ where
     /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
     /// # use fulgor::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let config = AsyncChannelConfig::<f32>::low_latency(0.001);
+    /// let config = AsyncChannelConfig::bounded(100);
     /// let (sender, receiver) = async_channel::bounded::<RendererEvent>(100);
     /// let event_receiver = AsyncEventReceiver::new(receiver, config);
     /// # Ok(())
@@ -108,7 +107,7 @@ where
     /// ```
     pub fn new(
         receiver: async_channel::Receiver<EventType>,
-        config: AsyncChannelConfig<NumberType>,
+        config: AsyncChannelConfig,
     ) -> Self {
         Self {
             receiver,
@@ -134,7 +133,7 @@ where
     /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
     /// # use fulgor::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let config = AsyncChannelConfig::<f64>::default();
+    /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
     /// # let event_receiver = AsyncEventReceiver::new(receiver, config);
     /// match event_receiver.receive_event().await {
@@ -181,7 +180,7 @@ where
     /// # use fulgor::renderer::RendererEvent;
     /// # use async_channel::TryRecvError;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let config = AsyncChannelConfig::<f64>::default();
+    /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
     /// # let event_receiver = AsyncEventReceiver::new(receiver, config);
     /// match event_receiver.try_receive_event() {
@@ -226,7 +225,7 @@ where
     /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
     /// # use fulgor::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let config = AsyncChannelConfig::<f64>::default();
+    /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
     /// # let event_receiver = AsyncEventReceiver::new(receiver, config);
     /// let count = event_receiver.received_events_count();
@@ -253,7 +252,7 @@ where
     /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
     /// # use fulgor::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let config = AsyncChannelConfig::<f64>::default();
+    /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
     /// # let event_receiver = AsyncEventReceiver::new(receiver, config);
     /// let config = event_receiver.configuration();
@@ -262,7 +261,7 @@ where
     /// # Ok(())
     /// # }
     /// ```
-    pub fn configuration(&self) -> &AsyncChannelConfig<NumberType> {
+    pub fn configuration(&self) -> &AsyncChannelConfig {
         &self.config
     }
 
@@ -282,7 +281,7 @@ where
     /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
     /// # use fulgor::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let config = AsyncChannelConfig::<f64>::default();
+    /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
     /// # let event_receiver = AsyncEventReceiver::new(receiver, config);
     /// if event_receiver.is_closed() {
@@ -312,7 +311,7 @@ where
     /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
     /// # use fulgor::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let config = AsyncChannelConfig::<f64>::default();
+    /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
     /// # let event_receiver = AsyncEventReceiver::new(receiver, config);
     /// let count = event_receiver.len();
@@ -339,7 +338,7 @@ where
     /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
     /// # use fulgor::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let config = AsyncChannelConfig::<f64>::default();
+    /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
     /// # let event_receiver = AsyncEventReceiver::new(receiver, config);
     /// if event_receiver.is_empty() {
@@ -365,10 +364,10 @@ where
     }
 }
 
-impl<EventType, NumberType> Clone for AsyncEventReceiver<EventType, NumberType>
+impl<EventType> Clone for AsyncEventReceiver<EventType>
 where
     EventType: Clone + Send + Sync + 'static,
-    NumberType: Copy + Clone + Send + Sync + 'static,
+    
 {
     /// Creates a clone of this receiver.
     ///
@@ -389,10 +388,10 @@ where
 /// This is safe because AsyncEventReceiver doesn't contain any self-referential
 /// data and can be moved freely. The underlying async_channel::Receiver handles
 /// its own pinning internally.
-impl<EventType, NumberType> Unpin for AsyncEventReceiver<EventType, NumberType>
+impl<EventType> Unpin for AsyncEventReceiver<EventType>
 where
     EventType: Clone + Send + Sync + 'static,
-    NumberType: Copy + Clone + Send + Sync + 'static,
+    
 {}
 
 /// Implementation of futures::Stream for AsyncEventReceiver.
@@ -403,10 +402,10 @@ where
 /// - Registers waker for future notifications when no events are available
 /// - Returns Poll::Ready(None) when the channel is closed
 /// - Maintains event statistics consistently with other reception methods
-impl<EventType, NumberType> Stream for AsyncEventReceiver<EventType, NumberType>
+impl<EventType> Stream for AsyncEventReceiver<EventType>
 where
     EventType: Clone + Send + Sync + 'static,
-    NumberType: Copy + Clone + Send + Sync + 'static,
+    
 {
     type Item = EventType;
 
@@ -464,10 +463,11 @@ mod tests {
     use crate::renderer::{RendererEvent};
     use futures::StreamExt;
     use tokio::time::{timeout, Duration};
+    use crate::renderer::manager::RendererId;
 
     #[tokio::test]
     async fn test_async_event_receiver_basic_functionality() {
-        let config = AsyncChannelConfig::<f64>::bounded(100);
+        let config = AsyncChannelConfig::bounded(100);
         let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
         let event_receiver = AsyncEventReceiver::new(receiver, config);
 
@@ -479,6 +479,7 @@ mod tests {
 
         // Send an event
         let test_event = RendererEvent::FrameRendered {
+            id: RendererId(1),
             frame_number: 42,
             frame_time_microseconds: 0,
             render_time_ns: 1667,
@@ -511,54 +512,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_async_receive_event() {
-        let config = AsyncChannelConfig::<f32>::low_latency(0.001);
-        let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
-        let event_receiver = AsyncEventReceiver::new(receiver, config);
-
-        let test_event = RendererEvent::ViewportResized {
-            width: 1920,
-            height: 1080,
-        };
-
-        // Send event in background task
-        let sender_task = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-            sender.send(test_event).await.expect("Failed to send event");
-        });
-
-        // Receive event with timeout
-        let result = timeout(Duration::from_millis(100), event_receiver.receive_event()).await;
-
-        match result {
-            Ok(Ok(_received_event)) => {
-                assert_eq!(event_receiver.received_events_count(), 1);
-            }
-            Ok(Err(e)) => panic!("receive_event failed: {}", e),
-            Err(_) => panic!("receive_event timed out"),
-        }
-
-        sender_task.await.expect("Sender task failed");
-    }
-
-    #[tokio::test]
     async fn test_stream_basic_functionality() {
-        let config = AsyncChannelConfig::<f64>::high_throughput(0.01);
+        let config = AsyncChannelConfig::bounded(100);
         let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
         let mut event_receiver = AsyncEventReceiver::new(receiver, config);
 
         // Send some events
         let test_events = vec![
             RendererEvent::FrameRendered {
+                id: RendererId(1),
                 frame_number: 1,
                 frame_time_microseconds: 0,
                 render_time_ns: 1000,
             },
             RendererEvent::ViewportResized {
+                id: RendererId(1),
                 width: 1920,
                 height: 1080,
             },
-            RendererEvent::SplatDataUpdated { splat_count: 50000 },
+            RendererEvent::SplatDataUpdated {
+                id: RendererId(1),
+                splat_count: 50000
+            },
         ];
 
         for event in &test_events {
@@ -582,18 +557,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_stream_channel_closed() {
-        let config = AsyncChannelConfig::<i32>::new(
+        let config = AsyncChannelConfig::new(
             1000,
             Some(Duration::from_millis(100)),
             false,
-            Duration::from_secs(1),
-            42,
+            Duration::from_secs(1)
         );
         let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
         let mut event_receiver = AsyncEventReceiver::new(receiver, config);
 
         // Send one event then close channel
         let test_event = RendererEvent::ViewportResized {
+            id: RendererId(1),
             width: 800,
             height: 600,
         };
@@ -613,24 +588,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_configuration_access() {
-        let config = AsyncChannelConfig::<f64>::bounded_with_backpressure(500);
+        let config = AsyncChannelConfig::bounded_with_backpressure(500);
         let (_, receiver) = async_channel::bounded::<RendererEvent>(100);
         let event_receiver = AsyncEventReceiver::new(receiver, config);
 
         let retrieved_config = event_receiver.configuration();
         assert_eq!(retrieved_config.maximum_buffer_size, 500);
         assert!(retrieved_config.has_backpressure());
-        assert_eq!(retrieved_config.precision_threshold(), 0.0f64);
     }
 
     #[tokio::test]
     async fn test_clone_receiver() {
-        let config = AsyncChannelConfig::<f64>::unbounded();
+        let config = AsyncChannelConfig::unbounded();
         let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
         let event_receiver1 = AsyncEventReceiver::new(receiver, config);
         let event_receiver2 = event_receiver1.clone();
 
-        let test_event = RendererEvent::SplatDataUpdated { splat_count: 100000 };
+        let test_event = RendererEvent::SplatDataUpdated {id: RendererId(1), splat_count: 100000 };
 
         sender.send(test_event).await.expect("Failed to send event");
 
@@ -662,7 +636,7 @@ mod tests {
             Complete,
         }
 
-        let config = AsyncChannelConfig::<f32>::bounded(10);
+        let config = AsyncChannelConfig::bounded(10);
         let (sender, receiver) = async_channel::unbounded::<CustomEvent>();
         let mut event_receiver = AsyncEventReceiver::new(receiver, config);
 
@@ -695,7 +669,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mixed_reception_methods() {
-        let config = AsyncChannelConfig::<f64>::default();
+        let config = AsyncChannelConfig::default();
         let (sender, receiver) = async_channel::unbounded::<i32>();
         let mut event_receiver = AsyncEventReceiver::new(receiver, config);
 

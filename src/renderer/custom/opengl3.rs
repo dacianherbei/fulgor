@@ -5,8 +5,9 @@
 //! shaders, vertex buffer objects, and framebuffer objects to achieve
 //! high-performance real-time rendering.
 
-use crate::renderer::{Capability, ProcessingUnitCapability, Renderer, DataPrecision};
+use crate::renderer::{Capability, ProcessingUnitCapability, Renderer, DataPrecision, RendererEvent, BufferedAsyncSender};
 use std::collections::HashMap;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 /// Configuration for OpenGL 3.x renderer implementation.
 #[derive(Debug, Clone)]
@@ -314,12 +315,16 @@ pub struct OpenGL3Renderer {
     vertex_array_object: u32,
     vertex_buffer_object: u32,
     shader_program: u32,
+
+    sender: BufferedAsyncSender<RendererEvent>,
+    receiver: UnboundedReceiver<RendererEvent>
 }
 
 impl OpenGL3Renderer {
     /// Create a new OpenGL3 renderer with the given configuration.
     pub fn new(config: OpenGL3RendererConfig) -> Self {
         let current_precision = config.preferred_precision;
+        let (buffered_sender, buffered_receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(Option::<usize>::Some(100));
 
         Self {
             config,
@@ -330,6 +335,8 @@ impl OpenGL3Renderer {
             vertex_array_object: 0,
             vertex_buffer_object: 0,
             shader_program: 0,
+            sender: buffered_sender,
+            receiver: buffered_receiver
         }
     }
 
@@ -543,6 +550,10 @@ impl Renderer for OpenGL3Renderer {
 
     fn get_frame_count(&self) -> u64 {
         self.frame_count
+    }
+
+    fn sender(&self) -> BufferedAsyncSender<RendererEvent> {
+        self.sender.clone()
     }
 }
 
