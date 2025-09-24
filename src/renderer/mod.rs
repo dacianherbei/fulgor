@@ -324,6 +324,29 @@ impl Renderer for ReferenceRenderer {
     fn get_frame_count(&self) -> u64 {
         self.frame_count
     }
+
+    pub async fn run(mut self) {
+        while let Some(event) = self.receiver.recv().await {
+            match event {
+                RendererEvent::Destroyed(id) => {
+                    self.stop();
+                    println!("ReferenceRenderer destroyed {:?}", id);
+                    break;
+                }
+                RendererEvent::Started(id) => {
+                    let _ = self.start();
+                    println!("ReferenceRenderer started {:?}", id);
+                }
+                RendererEvent::Stopped(id) => {
+                    self.stop();
+                    println!("ReferenceRenderer stopped {:?}", id);
+                }
+                RendererEvent::Switched(active) => {
+                    println!("ReferenceRenderer switched, active = {:?}", active);
+                }
+            }
+        }
+    }
 }
 
 /// Factory for creating ReferenceRenderer instances.

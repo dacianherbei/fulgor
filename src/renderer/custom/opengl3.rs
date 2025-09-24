@@ -555,6 +555,29 @@ impl Renderer for OpenGL3Renderer {
     fn sender(&self) -> BufferedAsyncSender<RendererEvent> {
         self.sender.clone()
     }
+
+    pub async fn run(mut self) {
+        while let Some(event) = self.receiver.recv().await {
+            match event {
+                RendererEvent::Destroyed(id) => {
+                    self.stop();
+                    println!("OpenGL3Renderer destroyed {:?}", id);
+                    break;
+                }
+                RendererEvent::Started(id) => {
+                    let _ = self.start();
+                    println!("OpenGL3Renderer started {:?}", id);
+                }
+                RendererEvent::Stopped(id) => {
+                    self.stop();
+                    println!("OpenGL3Renderer stopped {:?}", id);
+                }
+                RendererEvent::Switched(active) => {
+                    println!("OpenGL3Renderer switched, active = {:?}", active);
+                }
+            }
+        }
+    }
 }
 
 /// Builder for creating OpenGL3 renderer configurations.

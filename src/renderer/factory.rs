@@ -231,6 +231,26 @@ impl Renderer for MockRenderer {
     fn sender(&self) -> BufferedAsyncSender<RendererEvent> {
         self.sender.clone()
     }
+
+    async fn run(mut self) {
+        while let Some(event) = self.receiver.recv().await {
+            match event {
+                RendererEvent::Destroyed(id) => {
+                    println!("MockRenderer destroyed {:?}", id);
+                    break;
+                }
+                RendererEvent::Started(id) => {
+                    println!("MockRenderer started {:?}", id);
+                }
+                RendererEvent::Stopped(id) => {
+                    println!("MockRenderer stopped {:?}", id);
+                }
+                RendererEvent::Switched(active) => {
+                    println!("MockRenderer switched, active = {:?}", active);
+                }
+            }
+        }
+    }
 }
 
 /// Simple example factory implementation for testing
