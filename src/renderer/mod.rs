@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 pub use crate::renderer::async_communication::sender::BufferedAsyncSender;
 pub use factory::{RendererInfo, RendererFactory, MockRenderer, MockRendererFactory};
 use std::any::Any;
+use crate::renderer::manager::RendererId;
 
 /// Events emitted by renderer components in the fulgor engine.
 ///
@@ -32,36 +33,44 @@ pub enum RendererEvent {
     },
 
     /// A renderer has been destroyed.
-    Destroyed {
-    },
+    Destroyed (RendererId),
 
     /// A renderer has been started.
-    Started {
-    },
+    Started (RendererId),
 
     /// A renderer has been stopped.
-    Stopped {
-    },
+    Stopped (RendererId),
 
     /// The data precision for computations has been changed.
     DataPrecisionChanged {
+        id:RendererId,
         old_precision: DataPrecision,
         new_precision: DataPrecision
     },
 
+    /// The active renderer has been switched.
+    ///
+    /// Emitted when the rendering system switches from one backend to another.
+    /// The `Option<RendererKind>` represents the new active renderer:
+    /// - `Some(RendererKind)` indicates a switch to the specified backend
+    /// - `None` indicates no renderer is currently active
+    Switched(Option<RendererId>),
     /// Viewport has been resized.
     ViewportResized {
+        id:RendererId,
         width: u32,
         height: u32
     },
 
     /// Splat data has been updated.
     SplatDataUpdated {
+        id:RendererId,
         splat_count: usize
     },
 
     /// A frame has been rendered.
     FrameRendered {
+        id:RendererId,
         frame_number: u64,
         frame_time_microseconds: u64,
         render_time_ns: u64
@@ -69,6 +78,7 @@ pub enum RendererEvent {
 
     /// An error occurred.
     RendererError {
+        id:RendererId,
         message: String,
     },
 }
@@ -142,6 +152,7 @@ pub trait ProcessingUnitCapability: Capability {
 ///
 /// This design allows the enhanced renderer to work seamlessly with the existing
 /// factory system while providing advanced precision and capability management.
+#[async_trait::async_trait]
 pub trait Renderer: Send + Sync + Debug {
     /// Set the data precision for this renderer.
     ///
@@ -179,6 +190,9 @@ pub trait Renderer: Send + Sync + Debug {
     fn name(&self) -> &'static str;
 
     fn render_frame(&mut self) -> Result<(), String>;
+
+    fn sender(&self) -> async_communication::BufferedAsyncSender<RendererEvent>;
+    async fn run(self); // consumes and runs until `Shutdown`
 }
 
 /// A reference implementation of a renderer that provides basic functionality.

@@ -375,7 +375,7 @@ impl ReferenceRendererConfig {
                 },
                 "threads" => {
                     config.threads = value.parse::<usize>()
-                        .map_err(|_| RendererError::InvalidParameters(
+                        .unwrap_or_else(|_| RendererError::InvalidParameters(
                             format!("Invalid threads value: {}", value)));
 
                     if config.threads == 0 {

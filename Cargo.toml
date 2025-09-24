@@ -21,6 +21,7 @@ wgpu = { version = "26.0.1", optional = true }
 futures = "0.3.31"
 async-channel = "2.5.0"
 num_cpus = "1.17.0"
+async-trait = "0.1.89"
 
 [features]
 # "gpu" feature enables wgpu
