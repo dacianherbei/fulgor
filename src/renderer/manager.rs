@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 use std::thread;
 use tokio::task::JoinHandle;
-use crate::renderer::{BufferedAsyncSender, DataPrecision, RendererError, RendererEvent, RendererEventStream, RendererFactory, RendererInfo};
+use crate::renderer::{BufferedAsyncSender, DataPrecision, RendererError, RendererEvent, RendererFactory, RendererInfo};
 use crate::renderer::Renderer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -52,71 +52,96 @@ impl RendererManager {
         }
     }
 
+    /// Subscribe synchronously (std channel).
+    pub fn subscribe(&self) -> mpsc::Receiver<RendererEvent> {
+        let (tx, rx) = mpsc::channel();
+        *self.sender.lock().unwrap() = Some(tx);
+        rx
+    }
+
+    /// Subscribe asynchronously (returns a Stream-like buffer).
+    pub fn async_subscribe(&self) -> Arc<Mutex<Vec<RendererEvent>>> {
+        let sink = Arc::new(Mutex::new(Vec::new()));
+        self.async_sinks.lock().unwrap().push(sink.clone());
+        sink
+    }
+
     /// Subscribe using BufferedAsyncSender with bounded channel.
     pub fn subscribe_buffered_bounded(
         &self,
         capacity: usize,
-        drop_oldest_on_full: bool
+        drop_oldest_on_full: bool,
     ) -> tokio::sync::mpsc::Receiver<RendererEvent> {
-        let (buffered_sender, receiver) =
-            BufferedAsyncSender::<RendererEvent>::new_unbounded(capacity,drop_oldest_on_full,Arc::new(AtomicU64::new(0)));
-
-
-        // lock only the field you need
-        let mut slot = self.buffered_async_sender.lock().unwrap();
-        *slot = Some(buffered_sender);
-
+        let (buffered_sender, receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(
+            capacity,
+            drop_oldest_on_full,
+            Arc::new(AtomicU64::new(0)),
+        );
+        *self.buffered_async_sender.lock().unwrap() = Some(buffered_sender);
         receiver
     }
 
     /// Subscribe using BufferedAsyncSender with unbounded channel.
-    pub fn subscribe_buffered_unbounded(&self) -> tokio::sync::mpsc::UnboundedReceiver<RendererEvent> {
+    pub fn subscribe_buffered_unbounded(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<RendererEvent> {
         let (buffered_sender, receiver) =
             BufferedAsyncSender::<RendererEvent>::new_unbounded(Some(1));
-
-        // lock only the field you need
-        let mut slot = self.buffered_async_sender.lock().unwrap();
-        *slot = Some(buffered_sender);
-
+        *self.buffered_async_sender.lock().unwrap() = Some(buffered_sender);
         receiver
     }
 
     /// Get the current BufferedAsyncSender if available.
     pub fn get_buffered_sender(&self) -> Option<BufferedAsyncSender<RendererEvent>> {
-        self.buffered_async_sender.clone()
+        self.buffered_async_sender.lock().unwrap().clone()
     }
 
+    /// Local notification mechanism for subscribers.
+    /// Notify all subscribers (sync + async + buffered).
     fn notify(&self, event: RendererEvent) {
-        // Sync
-        if let Some(sender) = &self.sender {
-            let _ = sender.send(event.clone());
+        // sync sender
+        if let Some(sender) = &*self.sender.lock().unwrap() {
+            let _ = sender.send(event.clone()); // <-- use .send()
         }
-        // Async sinks
-        for sink in &self.async_sinks {
+
+        // async sinks
+        for sink in self.async_sinks.lock().unwrap().iter() {
             sink.lock().unwrap().push(event.clone());
         }
+
+        // buffered async sender
+        if let Some(buffered_sender) = &*self.buffered_async_sender.lock().unwrap() {
+            let sender = buffered_sender.clone();
+            tokio::spawn(async move {
+                let _ = sender.send_event(event).await;
+            });
+        }
     }
 
+
     /// Register a renderer (created by the factory) and spawn its task.
+
+    /// Register a renderer and spawn its run loop.
     pub fn add_renderer(&self, id: RendererId, mut renderer: Box<dyn Renderer>) {
         let fut = renderer.run();
         let handle = tokio::spawn(fut);
 
         self.renderers.lock().unwrap().insert(id, renderer);
         self.tasks.lock().unwrap().insert(id, handle);
+
+        self.notify(RendererEvent::RendererCreated { id });
     }
 
-    /// Start a renderer by id
+    /// Start a renderer by id (marks it active).
+
     pub fn start(&self, id: RendererId) {
-        let mut active = self.active.lock().unwrap();
-        *active = Some(id);
-        // Broadcast event if you want:
-        println!("RendererManager: started {:?}", id);
+        *self.active.lock().unwrap() = Some(id);
+        self.notify(RendererEvent::Started(id));
+        self.notify(RendererEvent::Switched(Some(id)));
     }
 
-    /// Stop a renderer by id
+    /// Stop a renderer by id.
     pub fn stop(&self, id: RendererId) {
-        // Send shutdown event to the renderer via its sender
         if let Some(r) = self.renderers.lock().unwrap().get_mut(&id) {
             let _ = r.sender().send(RendererEvent::Shutdown(id));
         }
@@ -127,17 +152,29 @@ impl RendererManager {
             });
         }
 
-        if self.active.lock().unwrap() == &Some(id) {
+        let was_active = *self.active.lock().unwrap() == Some(id);
+        if was_active {
             *self.active.lock().unwrap() = None;
         }
-        println!("RendererManager: stopped {:?}", id);
+
+        self.notify(RendererEvent::Stopped(id));
+        if was_active {
+            self.notify(RendererEvent::Switched(None));
+        }
     }
 
-    /// Stop all renderers
     pub fn stop_all(&self) {
         let ids: Vec<_> = self.renderers.lock().unwrap().keys().cloned().collect();
         for id in ids {
             self.stop(id);
+        }
+    }
+
+    /// Send an event to all renderers (broadcast).
+    pub fn broadcast(&self, event: RendererEvent) {
+        let renderers = self.renderers.lock().unwrap();
+        for (_, r) in renderers.iter() {
+            let _ = r.sender().send(event.clone());
         }
     }
 

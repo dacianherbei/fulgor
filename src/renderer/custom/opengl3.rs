@@ -561,9 +561,9 @@ impl Renderer for OpenGL3Renderer {
         Box::pin(async move {
             while let Some(event) = self.receiver.recv().await {
                 match event {
-                    RendererEvent::Destroyed(id) => {
+                    RendererEvent::Shutdown(id) => {
                         self.stop();
-                        println!("OpenGL3Renderer destroyed {:?}", id);
+                        println!("OpenGL3Renderer shut down {:?}", id);
                         break;
                     }
                     RendererEvent::Started(id) => {

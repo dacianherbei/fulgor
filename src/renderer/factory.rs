@@ -238,8 +238,8 @@ impl Renderer for MockRenderer {
         Box::pin(async move {
             while let Some(event) = self.receiver.recv().await {
                 match event {
-                    RendererEvent::Destroyed(id) => {
-                        println!("MockRenderer destroyed {:?}", id);
+                    RendererEvent::Shutdown(id) => {
+                        println!("MockRenderer shut down {:?}", id);
                         break;
                     }
                     RendererEvent::Started(id) => {

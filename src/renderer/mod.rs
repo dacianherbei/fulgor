@@ -29,12 +29,11 @@ pub use crate::renderer::manager::RendererId;
 pub enum RendererEvent {
     /// A renderer has been created.
     RendererCreated {
-        renderer_name: String,
-        precision: DataPrecision
+        id: RendererId
     },
 
     /// A renderer has been destroyed.
-    Destroyed (RendererId),
+    Shutdown (RendererId),
 
     /// A renderer has been started.
     Started (RendererId),
@@ -328,9 +327,9 @@ impl Renderer for ReferenceRenderer {
         Box::pin(async move {
             while let Some(event) = self.receiver.recv().await {
                 match event {
-                    RendererEvent::Destroyed(id) => {
+                    RendererEvent::Shutdown(id) => {
                         self.stop();
-                        println!("ReferenceRenderer destroyed {:?}", id);
+                        println!("ReferenceRenderer shut down {:?}", id);
                         break;
                     }
                     RendererEvent::Started(id) => {
