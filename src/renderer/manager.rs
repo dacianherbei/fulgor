@@ -51,7 +51,7 @@ impl RendererManager {
     }
 
     /// Subscribe synchronously (std channel).
-    pub fn subscribe(&self) -> mpsc::Receiver<RendererEvent> {
+    pub fn subscribe(&mut self) -> mpsc::Receiver<RendererEvent> {
         let (tx, rx) = mpsc::channel();
         self.sender = Some(tx);
         rx
@@ -114,7 +114,7 @@ impl RendererManager {
 
         // Buffered async sender
         if let Some(buffered_sender) = &self.buffered_async_sender {
-            let sender = self.buffered_sender.clone();
+            let sender = self.sender.clone();
             let _ = sender.send_event(event).await;
         }
     }
@@ -274,13 +274,11 @@ impl RendererManager {
     }
 
     pub fn stop_all(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        for (kind, renderer) in inner.renderers.iter_mut() {
+        for (kind, renderer) in self.renderers.iter_mut() {
             renderer.stop();
             self.notify(RendererEvent::Stopped(*kind));
         }
-        inner.active = None;
-        drop(inner);
+        self.active = None;
         self.notify(RendererEvent::Switched(None));
     }
 

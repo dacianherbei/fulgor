@@ -16,7 +16,9 @@ use std::sync::{Arc, Mutex};
 pub use crate::renderer::async_communication::sender::BufferedAsyncSender;
 pub use factory::{RendererInfo, RendererFactory, MockRenderer, MockRendererFactory};
 use std::any::Any;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use std::future::Future;
+use std::pin::Pin;
+use tokio::sync::mpsc::{UnboundedReceiver};
 pub use crate::renderer::manager::RendererId;
 
 /// Events emitted by renderer components in the fulgor engine.
@@ -152,8 +154,7 @@ pub trait ProcessingUnitCapability: Capability {
 ///
 /// This design allows the enhanced renderer to work seamlessly with the existing
 /// factory system while providing advanced precision and capability management.
-#[async_trait::async_trait]
-pub trait Renderer: Send + Sync + Debug {
+pub trait Renderer: Send + Debug {
     /// Set the data precision for this renderer.
     ///
     /// Attempts to change the internal data precision used for computations.
@@ -192,7 +193,8 @@ pub trait Renderer: Send + Sync + Debug {
     fn render_frame(&mut self) -> Result<(), String>;
 
     fn sender(&self) -> async_communication::BufferedAsyncSender<RendererEvent>;
-    async fn run(self); // consumes and runs until `Shutdown`
+    /// Run the renderer until it receives a Shutdown event.
+    fn run(&mut self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
 }
 
 /// A reference implementation of a renderer that provides basic functionality.
@@ -233,10 +235,13 @@ impl ReferenceRenderer {
 
     /// Create a new reference renderer with specified precision.
     pub fn with_precision(precision: DataPrecision) -> Self {
+        let (buffered_sender, buffered_receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(Option::<usize>::Some(100));
         Self {
             precision,
             is_running: false,
             frame_count: 0,
+            sender: buffered_sender,
+            receiver: buffered_receiver
         }
     }
 }
@@ -321,29 +326,34 @@ impl Renderer for ReferenceRenderer {
         self.frame_count
     }
 
-    async fn run(mut self) {
-        while let Some(event) = self.receiver.recv().await {
-            match event {
-                RendererEvent::Destroyed(id) => {
-                    self.stop();
-                    println!("ReferenceRenderer destroyed {:?}", id);
-                    break;
-                }
-                RendererEvent::Started(id) => {
-                    let _ = self.start();
-                    println!("ReferenceRenderer started {:?}", id);
-                }
-                RendererEvent::Stopped(id) => {
-                    self.stop();
-                    println!("ReferenceRenderer stopped {:?}", id);
-                }
-                RendererEvent::Switched(active) => {
-                    println!("ReferenceRenderer switched, active = {:?}", active);
+    fn run(&mut self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(async move {
+            while let Some(event) = self.receiver.recv().await {
+                match event {
+                    RendererEvent::Destroyed(id) => {
+                        self.stop();
+                        println!("ReferenceRenderer destroyed {:?}", id);
+                        break;
+                    }
+                    RendererEvent::Started(id) => {
+                        let _ = self.start();
+                        println!("ReferenceRenderer started {:?}", id);
+                    }
+                    RendererEvent::Stopped(id) => {
+                        self.stop();
+                        println!("ReferenceRenderer stopped {:?}", id);
+                    }
+                    RendererEvent::Switched(active) => {
+                        println!("ReferenceRenderer switched {:?}", active);
+                    }
+                    other => {
+                        println!("ReferenceRenderer ignoring {:?}", other);
+                    }
                 }
             }
-        }
+        })
     }
-    
+
     fn sender(&self) -> BufferedAsyncSender<RendererEvent> {
         self.sender.clone()
     }

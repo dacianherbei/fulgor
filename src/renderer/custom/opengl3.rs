@@ -7,7 +7,9 @@
 
 use crate::renderer::{Capability, ProcessingUnitCapability, Renderer, DataPrecision, RendererEvent, BufferedAsyncSender};
 use std::collections::HashMap;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use std::future::Future;
+use std::pin::Pin;
+use tokio::sync::mpsc::{UnboundedReceiver};
 
 /// Configuration for OpenGL 3.x renderer implementation.
 #[derive(Debug, Clone)]
@@ -556,27 +558,32 @@ impl Renderer for OpenGL3Renderer {
         self.sender.clone()
     }
 
-    async fn run(mut self) {
-        while let Some(event) = self.receiver.recv().await {
-            match event {
-                RendererEvent::Destroyed(id) => {
-                    self.stop();
-                    println!("OpenGL3Renderer destroyed {:?}", id);
-                    break;
-                }
-                RendererEvent::Started(id) => {
-                    let _ = self.start();
-                    println!("OpenGL3Renderer started {:?}", id);
-                }
-                RendererEvent::Stopped(id) => {
-                    self.stop();
-                    println!("OpenGL3Renderer stopped {:?}", id);
-                }
-                RendererEvent::Switched(active) => {
-                    println!("OpenGL3Renderer switched, active = {:?}", active);
+    fn run(&mut self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(async move {
+            while let Some(event) = self.receiver.recv().await {
+                match event {
+                    RendererEvent::Destroyed(id) => {
+                        self.stop();
+                        println!("OpenGL3Renderer destroyed {:?}", id);
+                        break;
+                    }
+                    RendererEvent::Started(id) => {
+                        let _ = self.start();
+                        println!("OpenGL3Renderer started {:?}", id);
+                    }
+                    RendererEvent::Stopped(id) => {
+                        self.stop();
+                        println!("OpenGL3Renderer stopped {:?}", id);
+                    }
+                    RendererEvent::Switched(active) => {
+                        println!("OpenGL3Renderer switched {:?}", active);
+                    }
+                    other => {
+                        println!("OpenGL3Renderer ignoring {:?}", other);
+                    }
                 }
             }
-        }
+        })
     }
 }
 

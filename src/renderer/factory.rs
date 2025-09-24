@@ -1,7 +1,9 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt::Debug;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use std::future::Future;
+use std::pin::Pin;
+use tokio::sync::mpsc::{UnboundedReceiver};
 pub(crate) use crate::renderer::{DataPrecision, Renderer, RendererError};
 use crate::renderer::{BufferedAsyncSender, RendererEvent};
 
@@ -232,24 +234,29 @@ impl Renderer for MockRenderer {
         self.sender.clone()
     }
 
-    async fn run(mut self) {
-        while let Some(event) = self.receiver.recv().await {
-            match event {
-                RendererEvent::Destroyed(id) => {
-                    println!("MockRenderer destroyed {:?}", id);
-                    break;
-                }
-                RendererEvent::Started(id) => {
-                    println!("MockRenderer started {:?}", id);
-                }
-                RendererEvent::Stopped(id) => {
-                    println!("MockRenderer stopped {:?}", id);
-                }
-                RendererEvent::Switched(active) => {
-                    println!("MockRenderer switched, active = {:?}", active);
+    fn run(&mut self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
+        Box::pin(async move {
+            while let Some(event) = self.receiver.recv().await {
+                match event {
+                    RendererEvent::Destroyed(id) => {
+                        println!("MockRenderer destroyed {:?}", id);
+                        break;
+                    }
+                    RendererEvent::Started(id) => {
+                        println!("MockRenderer started {:?}", id);
+                    }
+                    RendererEvent::Stopped(id) => {
+                        println!("MockRenderer stopped {:?}", id);
+                    }
+                    RendererEvent::Switched(active) => {
+                        println!("MockRenderer switched {:?}", active);
+                    }
+                    other => {
+                        println!("MockRenderer ignoring event {:?}", other);
+                    }
                 }
             }
-        }
+        })
     }
 }
 
@@ -900,7 +907,7 @@ mod tests {
 
         // Verify the precision is preserved in created renderers
         let renderer_f16 = factory.create(DataPrecision::F16, "").unwrap();
-        let any_ref = renderer_f16.as_ref() as &dyn Any;
+        let any_ref = &renderer_f16.as_ref() as &dyn Any;
         if let Some(mock) = any_ref.downcast_ref::<MockRenderer>() {
             assert_eq!(mock.precision(), DataPrecision::F16);
         } else {
