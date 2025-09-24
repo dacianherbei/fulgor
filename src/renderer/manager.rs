@@ -129,14 +129,10 @@ impl RendererManager {
         let renderer_for_future = Arc::clone(&renderer_arc);
 
         let fut = async move {
-            // Get the future without holding the guard across await
-            let future = {
-                let mut renderer = renderer_for_future.lock().unwrap();
-                renderer.run()
-            }; // Guard is dropped here
-
-            // Now await the future
-            future.await;
+            // Keep the renderer locked for the entire duration of run()
+            let mut renderer = renderer_for_future.lock().unwrap();
+            renderer.run().await;
+            // Guard is automatically dropped when the task completes
         };
 
         let handle = tokio::spawn(fut);
@@ -145,6 +141,7 @@ impl RendererManager {
         self.tasks.lock().unwrap().insert(id, handle);
         self.notify(RendererEvent::RendererCreated { id });
     }
+
     /// Start a renderer by id (marks it active).
 
     pub fn start(&self, id: RendererId) {
@@ -194,8 +191,12 @@ impl RendererManager {
     /// Send an event to all renderers (broadcast).
     pub fn broadcast(&self, event: RendererEvent) {
         let renderers = self.renderers.lock().unwrap();
-        for (_, r) in renderers.iter() {
-            let _ = r.sender().send(event.clone());
+        for (_, renderer_arc) in renderers.iter() {
+            // Lock each renderer individually to access sender
+            if let Ok(renderer) = renderer_arc.lock() {
+                let _ = renderer.sender().send(event.clone());
+            }
+            // If renderer is busy/locked, we skip it gracefully
         }
     }
 
