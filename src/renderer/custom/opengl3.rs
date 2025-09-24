@@ -556,7 +556,7 @@ impl Renderer for OpenGL3Renderer {
         self.sender.clone()
     }
 
-    pub async fn run(mut self) {
+    async fn run(mut self) {
         while let Some(event) = self.receiver.recv().await {
             match event {
                 RendererEvent::Destroyed(id) => {

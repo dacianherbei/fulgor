@@ -239,10 +239,6 @@ impl ReferenceRenderer {
             frame_count: 0,
         }
     }
-
-    pub fn sender(&self) -> BufferedAsyncSender<RendererEvent> {
-        self.sender.clone()
-    }
 }
 
 impl Capability for ReferenceRenderer {
@@ -325,7 +321,7 @@ impl Renderer for ReferenceRenderer {
         self.frame_count
     }
 
-    pub async fn run(mut self) {
+    async fn run(mut self) {
         while let Some(event) = self.receiver.recv().await {
             match event {
                 RendererEvent::Destroyed(id) => {
@@ -346,6 +342,10 @@ impl Renderer for ReferenceRenderer {
                 }
             }
         }
+    }
+    
+    fn sender(&self) -> BufferedAsyncSender<RendererEvent> {
+        self.sender.clone()
     }
 }
 
