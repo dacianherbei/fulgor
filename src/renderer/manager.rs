@@ -1425,18 +1425,29 @@ mod tests {
 
     #[test]
     fn test_error_propagation_through_query_methods() {
-        let manager = create_test_manager_with_factories();
+        // Create manager with single factory - enough to test error propagation
+        let mut manager = RendererManager::new();
+        let factory = Box::new(MockRendererFactory::new_full(
+            "TestRenderer",
+            vec![DataPrecision::F32, DataPrecision::F64],
+            "cpu_rendering,basic_3d",
+            5000,
+        ));
+        manager.register(factory).unwrap();
 
         // Test that parameter validation errors are properly propagated
-        let result = manager.validate_parameters_for("CpuRenderer", DataPrecision::F32, "invalid_params");
+        let result = manager.validate_parameters_for("TestRenderer", DataPrecision::F32, "invalid_params");
         assert!(result.is_err());
 
         // Test that creation errors are properly propagated through create_by_name
-        let result = manager.create_by_name("CpuRenderer", DataPrecision::F32, "invalid_params");
+        let result = manager.create_by_name("TestRenderer", DataPrecision::F32, "invalid_params");
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            RendererError::InvalidParameters(_) => {},
+            RendererError::InvalidParameters(_) => {
+                // ✅ Success! The InvalidParameters error from the factory
+                // was properly propagated through the manager to the caller
+            },
             _ => panic!("Expected InvalidParameters error to be propagated"),
         }
     }
