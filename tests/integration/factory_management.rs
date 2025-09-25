@@ -1,6 +1,94 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+// Create DIFFERENT factory types (each with unique TypeId)
+#[derive(Debug)]
+struct OpenGL3RendererFactory {
+    inner: MockRendererFactory,
+}
+
+impl OpenGL3RendererFactory {
+    fn new() -> Self {
+        Self {
+            inner: MockRendererFactory::new_full(
+                "OpenGL3Renderer",
+                vec![DataPrecision::F16, DataPrecision::F32],
+                "gpu_rendering,hardware_accelerated,opengl",
+                5000,
+            ),
+        }
+    }
+}
+
+impl RendererFactory for OpenGL3RendererFactory {
+    fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
+        self.inner.create(precision, parameters)
+    }
+    fn get_info(&self) -> RendererInfo { self.inner.get_info() }
+    fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
+        self.inner.validate_parameters(precision, parameters)
+    }
+}
+
+#[derive(Debug)]
+struct VulkanRendererFactory {
+    inner: MockRendererFactory,
+}
+
+impl VulkanRendererFactory {
+    fn new() -> Self {
+        Self {
+            inner: MockRendererFactory::new_full(
+                "VulkanRenderer",
+                vec![DataPrecision::F32, DataPrecision::F64],
+                "gpu_rendering,hardware_accelerated,vulkan",
+                8000,
+            ),
+        }
+    }
+}
+
+impl RendererFactory for VulkanRendererFactory {
+    fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
+        self.inner.create(precision, parameters)
+    }
+    fn get_info(&self) -> RendererInfo { self.inner.get_info() }
+    fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
+        self.inner.validate_parameters(precision, parameters)
+    }
+}
+
+#[test]
+fn test_multiple_factory_types() {
+    let mut manager = RendererManager::new();
+
+    // Register DIFFERENT factory types (each has unique TypeId)
+    let opengl_factory = Box::new(OpenGL3RendererFactory::new());
+    manager.register(opengl_factory).unwrap(); // ✅ Succeeds
+
+    let vulkan_factory = Box::new(VulkanRendererFactory::new());
+    manager.register(vulkan_factory).unwrap(); // ✅ Succeeds - different TypeId!
+
+    // Test that both factories are registered
+    assert_eq!(manager.get_factory_count(), 2);
+
+    // Test capability searches work across different factories
+    let gpu_renderers = manager.find_by_capability("gpu_rendering");
+    assert_eq!(gpu_renderers.len(), 2); // Both support GPU rendering
+
+    let opengl_renderers = manager.find_by_capability("opengl");
+    assert_eq!(opengl_renderers.len(), 1); // Only OpenGL factory
+
+    let vulkan_renderers = manager.find_by_capability("vulkan");
+    assert_eq!(vulkan_renderers.len(), 1); // Only Vulkan factory
+
+    // Test creating renderers from each factory
+    let opengl_renderer = manager.create_by_name("OpenGL3Renderer", DataPrecision::F32, "").unwrap();
+    let vulkan_renderer = manager.create_by_name("VulkanRenderer", DataPrecision::F64, "").unwrap();
+
+    assert_ne!(opengl_renderer.0.unique_id(), vulkan_renderer.0.unique_id());
+}
+
 #[test]
 fn test_concurrent_factory_usage() {
     println!("=== Concurrent Factory Usage Test ===");

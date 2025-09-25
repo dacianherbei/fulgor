@@ -869,6 +869,107 @@ mod tests {
     }
 
     #[test]
+    fn test_single_factory_multiple_renderers() {
+        let mut manager = RendererManager::new();
+
+        // Register ONE factory type (as per design concept)
+        let factory = Box::new(MockRendererFactory::new_full(
+            "OpenGL3Renderer",
+            vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::F64],
+            "gpu_rendering,hardware_accelerated,real_time",
+            5000,
+        ));
+        manager.register(factory).unwrap();
+
+        // Test that same factory can create multiple renderers with different parameters
+        let renderer1 = manager.create_by_name("OpenGL3Renderer", DataPrecision::F16, "vsync=true").unwrap();
+        let renderer2 = manager.create_by_name("OpenGL3Renderer", DataPrecision::F32, "vsync=false").unwrap();
+        let renderer3 = manager.create_by_name("OpenGL3Renderer", DataPrecision::F64, "msaa=4").unwrap();
+
+        // Verify they're different instances but from same factory
+        assert_ne!(renderer1.0.unique_id(), renderer2.0.unique_id());
+        assert_ne!(renderer2.0.unique_id(), renderer3.0.unique_id());
+
+        // Verify they have the expected precisions
+        assert_eq!(renderer1.0.get_data_precision(), DataPrecision::F16);
+        assert_eq!(renderer2.0.get_data_precision(), DataPrecision::F32);
+        assert_eq!(renderer3.0.get_data_precision(), DataPrecision::F64);
+    }
+
+    #[test]
+    fn test_concurrent_access_single_factory() {
+        let mut manager = RendererManager::new();
+
+        // Register ONE factory (following design concept)
+        let factory = Box::new(MockRendererFactory::new_full(
+            "TestRenderer",
+            vec![DataPrecision::F32, DataPrecision::F64],
+            "cpu_rendering,software,basic_3d",
+            3000,
+        ));
+        manager.register(factory).unwrap();
+
+        let manager = Arc::new(manager);
+        let mut handles = vec![];
+
+        // Test concurrent access to the SINGLE factory
+        for i in 0..10 {
+            let manager_clone = Arc::clone(&manager);
+            let handle = thread::spawn(move || {
+                match i % 4 {
+                    0 => {
+                        // Test capability search
+                        let _renderers = manager_clone.find_by_capability("cpu_rendering");
+                    },
+                    1 => {
+                        // Test precision search
+                        let _renderers = manager_clone.find_by_precision(DataPrecision::F32);
+                    },
+                    2 => {
+                        // Test factory count
+                        let _count = manager_clone.get_factory_count();
+                    },
+                    3 => {
+                        // Test factory lookup
+                        let _info = manager_clone.find_factory_by_name("TestRenderer");
+                    },
+                    _ => unreachable!(),
+                }
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    // CORRECT TEST APPROACH 3: Test Factory Uniqueness Enforcement
+    #[test]
+    fn test_factory_type_uniqueness_correctly_enforced() {
+        let mut manager = RendererManager::new();
+
+        // Register first MockRendererFactory
+        let factory1 = Box::new(MockRendererFactory::new("FirstMock"));
+        let result1 = manager.register(factory1);
+        assert!(result1.is_ok()); // ✅ First registration succeeds
+
+        // Try to register second MockRendererFactory (same TypeId)
+        let factory2 = Box::new(MockRendererFactory::new("SecondMock"));
+        let result2 = manager.register(factory2);
+        assert!(result2.is_err()); // ✅ Correctly rejected!
+
+        // Verify it's the right error type
+        match result2.unwrap_err() {
+            RendererError::FactoryAlreadyRegistered(_) => {}, // ✅ Expected
+            _ => panic!("Wrong error type"),
+        }
+
+        // Verify only one factory is registered
+        assert_eq!(manager.get_factory_count(), 1);
+    }
+
+    #[test]
     fn test_create_by_name_success() {
         let manager = create_test_manager_with_factories();
 
@@ -1249,7 +1350,17 @@ mod tests {
 
     #[test]
     fn test_concurrent_access_to_query_methods() {
-        let manager = Arc::new(create_test_manager_with_factories());
+        // Create manager with single factory (following design concept)
+        let mut manager = RendererManager::new();
+        let factory = Box::new(MockRendererFactory::new_full(
+            "CpuRenderer",  // Keep original name that test expects
+            vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::F64],
+            "cpu_rendering,gpu_rendering,real_time,basic_3d",
+            5000,
+        ));
+        manager.register(factory).unwrap();
+
+        let manager = Arc::new(manager);
         let mut handles = vec![];
 
         // Test concurrent read access to various query methods
@@ -1268,7 +1379,7 @@ mod tests {
                         let _count = manager_clone.get_factory_count();
                     },
                     3 => {
-                        let _info = manager_clone.find_factory_by_name("CpuRenderer");
+                        let _info = manager_clone.find_factory_by_name("CpuRenderer");  // Matches factory name
                     },
                     _ => unreachable!(),
                 }
