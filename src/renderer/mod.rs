@@ -8,7 +8,7 @@ pub mod factory;
 pub mod capabilities;
 pub mod custom;
 pub mod world;
-mod manager;
+pub mod manager;
 
 use std::any::TypeId;
 use std::fmt::{self, Debug};

@@ -1,389 +1,273 @@
-// examples/factory_demo.rs
-//! Comprehensive demo of the restructured factory system
+// Fixed factory_demo.rs - Updated to work with current OpenGL3RendererConfig structure
 
-use fulgor::renderer::prelude::*;
-use fulgor::renderer::factory::{parse_parameters, ReferenceRendererConfig, RendererFactory};
+use fulgor::renderer::{
+    manager::RendererManager,
+    factory::{RendererFactory, MockRendererFactory},
+    custom::opengl3::{OpenGL3RendererFactory, OpenGL3Renderer, OpenGL3RendererConfig, OpenGL3RendererBuilder},
+    prelude::*,
+    DataPrecision
+};
 
-fn main() {
-    println!("🚀 Restructured 3D Gaussian Splatting Factory System Demo\n");
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("=== Fulgor Renderer Factory Demonstration ===\n");
 
-    demo_module_organization();
-    demo_enhanced_renderers();
-    demo_parameter_parsing();
-    demo_configuration_management();
-    demo_factory_capabilities();
-    demo_realistic_workflows();
-    demo_backward_compatibility();
+    // Create a renderer manager
+    let mut manager = RendererManager::new();
+    println!("✓ Created RendererManager");
+
+    // Register different renderer factories
+    register_factories(&mut manager)?;
+
+    // Demonstrate factory discovery
+    demonstrate_factory_discovery(&manager);
+
+    // Demonstrate renderer creation through factories
+    demonstrate_renderer_creation(&manager)?;
+
+    // Demonstrate configuration and builders
+    demonstrate_configuration_builders()?;
+
+    // Demonstrate direct renderer creation
+    demonstrate_direct_creation()?;
+
+    println!("\n=== Factory Demo Completed Successfully ===");
+    Ok(())
 }
 
-fn demo_module_organization() {
-    println!("=== Module Organization Demo ===");
+fn register_factories(manager: &mut RendererManager) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n--- Registering Renderer Factories ---");
 
-    // Factories are now in their respective modules
-    let cpu_factory = ReferenceRendererFactory::new();
-    let gpu_factory = OpenGL3RendererFactory::new();
-
-    println!("✓ CPU factory from cpu_reference module");
-    println!("✓ GPU factory from gpu_optional module");
-
-    // Create renderers using module-specific factories
-    let cpu_renderer = cpu_factory.create(DataPrecision::F32, "threads=4").unwrap();
-    let gpu_renderer = gpu_factory.create(DataPrecision::F32, "device=auto").unwrap();
-
-    println!("✓ Created CPU renderer: {}", cpu_renderer.name());
-    println!("✓ Created GPU renderer: {}", gpu_renderer.name());
-    println!();
-}
-
-fn demo_enhanced_renderers() {
-    println!("=== Enhanced Renderer Demo ===");
-
-    // Traditional way (backward compatible)
-    let basic_cpu = ReferenceRenderer::new();
-    println!("✓ Traditional ReferenceRenderer::new() still works");
-
-    // GPU renderer enhancement
-    let gpu_config = OpenGL3RendererConfig::from_parameters(
-        DataPrecision::F32,
-        "device=cuda:0,memory_limit=2GB"
-    ).unwrap();
-    let configured_gpu = OpenGL3Renderer::new(gpu_config);
-
-    println!("✓ GPU renderer also enhanced with configuration");
-
-    println!("  OpenGL: {}.{}, Viewpot: {}x{}",
-             configured_gpu.config().opengl_version.0,
-             configured_gpu.config().opengl_version.1,
-             configured_gpu.config().viewport_size.0,
-             configured_gpu.config().viewport_size.1);
-    println!();
-}
-
-fn demo_parameter_parsing() {
-    println!("=== Parameter Parsing Demo ===");
-
-    // Demonstrate the shared parameter parsing utility
-    let examples = [
-        ("", "Empty parameters"),
-        ("threads=4", "Single parameter"),
-        ("threads=8,quality=high", "Multiple parameters"),
-        ("device=cuda:0,memory_limit=2GB", "GPU parameters with units"),
-        (" threads = 4 , quality = high ", "Parameters with spaces"),
-        ("debug,verbose", "Boolean flags"),
-        ("threads=16,debug,quality=ultra", "Mixed parameters"),
-    ];
-
-    for (params, description) in examples {
-        let parsed = parse_parameters(params);
-        println!("Input: '{}' ({})", params, description);
-        println!("Parsed: {:?}", parsed);
-        println!();
+    // Register Mock renderer factory
+    let mock_factory = Box::new(MockRendererFactory::new("MockRenderer"));
+    match manager.register(mock_factory) {
+        Ok(_) => println!("✓ Registered MockRendererFactory"),
+        Err(e) => println!("✗ Failed to register MockRenderer: {}", e),
     }
+
+    // Register OpenGL3 renderer factory
+    let opengl_factory = Box::new(OpenGL3RendererFactory::new());
+    match manager.register(opengl_factory) {
+        Ok(_) => println!("✓ Registered OpenGL3RendererFactory"),
+        Err(e) => println!("✗ Failed to register OpenGL3Renderer: {}", e),
+    }
+
+    println!("Total factories registered: {}", manager.get_factory_count());
+    Ok(())
 }
 
-fn demo_configuration_management() {
-    println!("=== Configuration Management Demo ===");
+fn demonstrate_factory_discovery(manager: &RendererManager) {
+    println!("\n--- Factory Discovery ---");
 
-    // CPU configuration examples
-    println!("CPU Configuration Examples:");
+    // Get all available renderers
+    let renderer_infos = manager.get_renderer_info_list();
+    println!("Found {} renderer types:", renderer_infos.len());
 
-    let cpu_configs = [
-        (DataPrecision::F32, "", "Default configuration"),
-        (DataPrecision::F64, "threads=1,debug=true", "Debug configuration"),
-        (DataPrecision::F32, "threads=16,quality=ultra", "High-performance configuration"),
-        (DataPrecision::F64, "threads=4,quality=medium,debug=false", "Balanced configuration"),
-    ];
+    for info in &renderer_infos {
+        println!("  • {} (timeout: {}ms)", info.name, info.timeout_microseconds);
 
-    for (precision, params, description) in cpu_configs {
-        match ReferenceRendererConfig::from_parameters(precision, params) {
-            Ok(config) => {
-                println!("  ✓ {}: threads={}, quality={}, debug={}, precision={}",
-                         description, config.threads, config.quality, config.debug, config.precision);
-            }
-            Err(e) => {
-                println!("  ✗ {}: Error - {:?}", description, e);
-            }
+        // Show capabilities
+        let capabilities = info.get_capabilities();
+        if !capabilities.is_empty() {
+            println!("    Capabilities: {}", capabilities.join(", "));
+        }
+
+        // Show parameters if any
+        let params = info.get_parameters();
+        if !params.is_empty() {
+            println!("    Parameters: {}", params.keys().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
         }
     }
 
-    // GPU configuration examples
-    println!("\nGPU Configuration Examples:");
-
-    let gpu_configs = [
-        (DataPrecision::F32, "", "Default configuration"),
-        (DataPrecision::F32, "device=cuda:0", "Specific GPU device"),
-        (DataPrecision::F32, "memory_limit=4GB", "High memory limit"),
-        (DataPrecision::F32, "device=auto,memory_limit=512MB", "Constrained environment"),
-    ];
-
-    for (precision, params, description) in gpu_configs {
-        match OpenGL3RendererConfig::from_parameters(precision, params) {
-            Ok(config) => {
-                println!("  ✓ {}: device={}, memory={}MB, precision={}",
-                         description, config.device, config.memory_limit / (1024 * 1024), config.precision);
-            }
-            Err(e) => {
-                println!("  ✗ {}: Error - {:?}", description, e);
-            }
-        }
+    // Find renderers by capability
+    println!("\nRenderers with 'gpu_rendering' capability:");
+    let gpu_renderers = manager.find_by_capability("gpu_rendering");
+    for info in gpu_renderers {
+        println!("  • {}", info.name);
     }
-    println!();
 }
 
-fn demo_factory_capabilities() {
-    println!("=== Factory Capabilities Demo ===");
+fn demonstrate_renderer_creation(manager: &RendererManager) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n--- Renderer Creation Through Manager ---");
 
-    let cpu_factory = ReferenceRendererFactory::new();
-    let gpu_factory = OpenGL3RendererFactory::new();
-
-    // Display factory information
-    let cpu_info = cpu_factory.get_info();
-    let gpu_info = gpu_factory.get_info();
-
-    println!("CPU Factory Information:");
-    println!("  Name: {}", cpu_info.name);
-    println!("  Capabilities: {}", cpu_info.capabilities);
-    println!("  Timeout: {}μs", cpu_info.timeout_microseconds);
-    println!("  Parameters:");
-    for (param, desc) in cpu_info.get_parameters() {
-        println!("    {}: {}", param, desc);
+    // Create Mock renderer
+    println!("Creating Mock renderer...");
+    match manager.create_by_name("MockRenderer", DataPrecision::F32, "test_mode=true") {
+        Ok((renderer, _rx, _tx)) => {
+            println!("✓ Mock renderer created: {}", renderer.name());
+            println!("  - Precision: {:?}", renderer.get_data_precision());
+            println!("  - Unique ID: {}", renderer.unique_id());
+        }
+        Err(e) => println!("✗ Failed to create Mock renderer: {}", e),
     }
 
-    println!("\nGPU Factory Information:");
-    println!("  Name: {}", gpu_info.name);
-    println!("  Capabilities: {}", gpu_info.capabilities);
-    println!("  Timeout: {}μs", gpu_info.timeout_microseconds);
-    println!("  Parameters:");
-    for (param, desc) in gpu_info.get_parameters() {
-        println!("    {}: {}", param, desc);
+    // Create OpenGL3 renderer with parameters
+    println!("\nCreating OpenGL3 renderer...");
+    let opengl_params = "opengl_version=4.1,max_splat_count=500000,msaa_samples=4,viewport_size=1920x1080";
+    match manager.create_by_name("OpenGL3Renderer", DataPrecision::F32, opengl_params) {
+        Ok((renderer, _rx, _tx)) => {
+            println!("✓ OpenGL3 renderer created: {}", renderer.name());
+            println!("  - Precision: {:?}", renderer.get_data_precision());
+            println!("  - Unique ID: {}", renderer.unique_id());
+        }
+        Err(e) => println!("✗ Failed to create OpenGL3 renderer: {}", e),
     }
 
-    // Demonstrate capability queries
-    println!("\nCapability-based Factory Selection:");
-    if cpu_info.has_capability("debugging") {
-        println!("  → CPU factory is good for development and debugging");
-    }
-    if cpu_info.has_capability("reference") {
-        println!("  → CPU factory provides reference implementation");
-    }
-    if gpu_info.has_capability("realtime") {
-        println!("  → GPU factory is good for real-time applications");
-    }
-    if gpu_info.has_capability("fast") {
-        println!("  → GPU factory provides high-performance rendering");
-    }
-
-    // Precision support matrix
-    println!("\nPrecision Support Matrix:");
-    for precision in [DataPrecision::F16, DataPrecision::F32, DataPrecision::F64, DataPrecision::BFloat16] {
-        let cpu_support = cpu_factory.validate_parameters(precision, "").is_ok();
-        let gpu_support = gpu_factory.validate_parameters(precision, "").is_ok();
-        println!("  {}: CPU={}, GPU={}", precision,
-                 if cpu_support { "✓" } else { "✗" },
-                 if gpu_support { "✓" } else { "✗" });
-    }
-    println!();
+    Ok(())
 }
 
-fn demo_realistic_workflows() {
-    println!("=== Realistic Workflow Demo ===");
+fn demonstrate_configuration_builders() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n--- Configuration and Builders ---");
 
-    let cpu_factory = ReferenceRendererFactory::new();
-    let gpu_factory = OpenGL3RendererFactory::new();
+    // Demonstrate OpenGL3RendererConfig creation and inspection
+    println!("Creating custom OpenGL3 configuration...");
 
-    // Workflow 1: Algorithm Development
-    println!("🔬 Algorithm Development Workflow:");
-    let mut dev_renderer = cpu_factory.create(
-        DataPrecision::F64,
-        "threads=1,quality=low,debug=true"
-    ).unwrap();
+    let custom_config = OpenGL3RendererConfig::from_parameters(
+        DataPrecision::F16,
+        "opengl_version=4.2,max_splat_count=750000,msaa_samples=8,viewport_size=2560x1440"
+    )?;
 
-    println!("  Created high-precision, debug-enabled CPU renderer");
-    dev_renderer.start().unwrap();
-    println!("  Started renderer for algorithm testing");
+    println!("✓ Custom OpenGL3 configuration created:");
+    println!("  - OpenGL Version: {:?}", custom_config.opengl_version);
+    println!("  - Max Splat Count: {}", custom_config.max_splat_count);
+    println!("  - MSAA Samples: {}", custom_config.msaa_samples);
+    println!("  - Viewport: {}x{}", custom_config.viewport_size.0, custom_config.viewport_size.1);
+    println!("  - Preferred Precision: {:?}", custom_config.preferred_precision);
+    println!("  - Depth Testing: {}", custom_config.depth_testing);
+    println!("  - Alpha Blending: {}", custom_config.alpha_blending);
 
-    // Simulate development work
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    // Demonstrate OpenGL3RendererBuilder
+    println!("\nUsing OpenGL3RendererBuilder...");
+    let builder_renderer = OpenGL3RendererBuilder::new()
+        .opengl_version(4, 5).map_err(|e| format!("OpenGL version error: {}", e))?
+        .max_splat_count(2_000_000)
+        .msaa_samples(16).map_err(|e| format!("MSAA error: {}", e))?
+        .viewport_size(3840, 2160)
+        .preferred_precision(DataPrecision::F32)
+        .depth_testing(true)
+        .alpha_blending(true)
+        .opengl_parameter("vsync", "true")
+        .opengl_parameter("debug_context", "false")
+        .build();
 
-    dev_renderer.stop();
-    println!("  Stopped renderer after testing");
+    println!("✓ Builder renderer created:");
+    println!("  - Name: {}", builder_renderer.name());
+    println!("  - OpenGL Version Required: {:?}", builder_renderer.required_opengl_version());
+    println!("  - Max Splat Count: {}", builder_renderer.max_splat_count());
+    println!("  - Viewport Size: {:?}", builder_renderer.viewport_size());
+    println!("  - Context Initialized: {}", builder_renderer.is_context_initialized());
 
-    // Workflow 2: Production GPU Deployment
-    println!("\n🚀 Production GPU Deployment Workflow:");
-    let mut prod_renderer = gpu_factory.create(
-        DataPrecision::F32,
-        "device=cuda:0,memory_limit=4GB"
-    ).unwrap();
-
-    println!("  Created optimized GPU renderer for production");
-
-    // Note: GPU start might fail if feature not enabled
-    match prod_renderer.start() {
-        Ok(_) => {
-            println!("  Started GPU renderer for real-time rendering");
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            prod_renderer.stop();
-            println!("  Stopped renderer after production run");
-        }
-        Err(e) if e.contains("gpu feature not enabled") => {
-            println!("  GPU feature not enabled in this build");
-        }
-        Err(e) => {
-            println!("  GPU initialization failed: {}", e);
-        }
-    }
-
-    // Workflow 3: Research High-Quality Rendering
-    println!("\n📊 Research High-Quality Workflow:");
-    let mut research_renderer = cpu_factory.create(
-        DataPrecision::F32,
-        "threads=16,quality=ultra,debug=false"
-    ).unwrap();
-
-    println!("  Created multi-threaded CPU renderer for quality research");
-    research_renderer.start().unwrap();
-    println!("  Started renderer for high-quality offline rendering");
-
-    research_renderer.stop();
-    println!("  Completed research rendering");
-
-    // Workflow 4: Cloud/Container Deployment
-    println!("\n☁️ Cloud Container Workflow:");
-    let mut cloud_renderer = cpu_factory.create(
-        DataPrecision::F32,
-        "threads=8,quality=medium,debug=false"
-    ).unwrap();
-
-    println!("  Created container-optimized CPU renderer");
-    cloud_renderer.start().unwrap();
-    println!("  Started renderer in containerized environment");
-
-    cloud_renderer.stop();
-    println!("  Stopped renderer after cloud processing");
-    println!();
+    Ok(())
 }
 
-fn demo_backward_compatibility() {
-    println!("=== Backward Compatibility Demo ===");
+fn demonstrate_direct_creation() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n--- Direct Renderer Creation ---");
 
-    // Show that existing code still works
-    println!("Existing code patterns still work:");
+    // Create renderer with default configuration
+    println!("Creating OpenGL3 renderer with default config...");
+    let default_renderer = OpenGL3Renderer::default();
 
-    // Traditional renderer creation
-    let basic_cpu = ReferenceRenderer::new();
-    let basic_gpu = OpenGL3Renderer::new();
+    println!("✓ Default OpenGL3 renderer created:");
+    println!("  - Name: {}", default_renderer.name());
+    println!("  - Precision: {:?}", default_renderer.get_data_precision());
+    println!("  - Running: {}", default_renderer.is_running());
+    println!("  - Frame Count: {}", default_renderer.get_frame_count());
 
-    println!("  ✓ ReferenceRenderer::<f32>::new() - works");
-    println!("  ✓ OpenGL3Renderer::new() - works");
+    // Create renderer with custom configuration
+    println!("\nCreating OpenGL3 renderer with custom config...");
+    let mut custom_config = OpenGL3RendererConfig::default();
+    custom_config.preferred_precision = DataPrecision::F16;
+    custom_config.max_splat_count = 500_000;
+    custom_config.viewport_size = (1280, 720);
+    custom_config.msaa_samples = 2;
 
-    // Traditional renderer usage
-    let mut traditional_renderer = ReferenceRenderer::new();
+    let custom_renderer = OpenGL3Renderer::new(custom_config);
 
-    println!("  ✓ Traditional lifecycle methods work:");
-    assert!(traditional_renderer.start().is_ok());
-    println!("    - start() works");
+    println!("✓ Custom OpenGL3 renderer created:");
+    println!("  - Name: {}", custom_renderer.name());
+    println!("  - Precision: {:?}", custom_renderer.get_data_precision());
+    println!("  - Max Splats: {}", custom_renderer.max_splat_count());
+    println!("  - Viewport: {:?}", custom_renderer.viewport_size());
 
-    traditional_renderer.stop();
-    println!("    - stop() works");
-
-    assert_eq!(traditional_renderer.name(), "CpuReference");
-    println!("    - name() works");
-
-    // Show enhanced functionality is additive
-    println!("\nEnhanced functionality is additive:");
-    println!("  ✓ get_config() - new method");
-    println!("  ✓ get_frame_count() - enhanced");
-    println!("  ✓ reset_frame_count() - new method");
-    println!("  ✓ is_running() - new method");
-    println!("  ✓ with_config() - new constructor");
-
-    println!("\n✅ All existing code continues to work unchanged!");
-    println!();
+    Ok(())
 }
 
-// Demonstration of a potential registry system using the restructured factories
-fn demo_registry_integration() {
-    println!("=== Registry Integration Demo ===");
+// Additional utility functions for the demo
 
-    // Mock registry to show integration patterns
-    struct RendererRegistry {
-        cpu_factory: ReferenceRendererFactory,
-        gpu_factory: OpenGL3RendererFactory,
+fn demonstrate_renderer_capabilities() {
+    println!("\n--- Renderer Capabilities ---");
+
+    let opengl_renderer = OpenGL3Renderer::default();
+
+    println!("OpenGL3Renderer capabilities:");
+    println!("  - Capability name: {}", opengl_renderer.capability_name());
+    if let Some(desc) = opengl_renderer.description() {
+        println!("  - Description: {}", desc);
     }
 
-    impl RendererRegistry {
-        fn new() -> Self {
-            Self {
-                cpu_factory: ReferenceRendererFactory::new(),
-                gpu_factory: OpenGL3RendererFactory::new(),
-            }
-        }
-
-        fn create_for_capability(&self, capability: &str, precision: DataPrecision, params: &str)
-                                 -> Result<Box<dyn Renderer>, RendererError> {
-
-            let cpu_info = self.cpu_factory.get_info();
-            let gpu_info = self.gpu_factory.get_info();
-
-            if cpu_info.has_capability(capability) {
-                self.cpu_factory.create(precision, params)
-            } else if gpu_info.has_capability(capability) {
-                self.gpu_factory.create(precision, params)
-            } else {
-                Err(RendererError::RendererNotFoundByName(
-                    format!("No factory supports capability: {}", capability)
-                ))
-            }
-        }
-
-        fn create_optimal_for_precision(&self, precision: DataPrecision, params: &str)
-                                        -> Result<Box<dyn Renderer>, RendererError> {
-
-            // Try GPU first for F32 (performance), fallback to CPU
-            if precision == DataPrecision::F32 {
-                if let Ok(renderer) = self.gpu_factory.create(precision, params) {
-                    return Ok(renderer);
-                }
-            }
-
-            // Use CPU for F64 or if GPU failed
-            self.cpu_factory.create(precision, params)
-        }
+    // Test precision support
+    let precisions = [DataPrecision::F16, DataPrecision::F32, DataPrecision::F64, DataPrecision::BFloat16];
+    for precision in precisions {
+        let supported = opengl_renderer.supports_precision(precision);
+        println!("  - {:?}: {}", precision, if supported { "✓" } else { "✗" });
     }
 
-    let registry = RendererRegistry::new();
+    let supported_precisions = opengl_renderer.supported_precisions();
+    println!("  - Supported precisions: {:?}", supported_precisions);
 
-    // Demonstrate capability-based selection
-    println!("Capability-based renderer selection:");
+    if let Some(preferred) = opengl_renderer.preferred_precision() {
+        println!("  - Preferred precision: {:?}", preferred);
+    }
+}
 
-    let debug_renderer = registry.create_for_capability(
-        "debugging",
-        DataPrecision::F64,
-        "threads=1,debug=true"
-    ).unwrap();
-    println!("  ✓ Selected {} for debugging capability", debug_renderer.name());
+fn demonstrate_error_handling() {
+    println!("\n--- Error Handling ---");
 
-    let realtime_renderer = registry.create_for_capability(
-        "realtime",
-        DataPrecision::F32,
-        "device=auto"
-    ).unwrap();
-    println!("  ✓ Selected {} for realtime capability", realtime_renderer.name());
+    // Try creating with invalid OpenGL version
+    match OpenGL3RendererBuilder::new().opengl_version(2, 1) {
+        Ok(_) => println!("✗ Should have failed with OpenGL 2.1"),
+        Err(e) => println!("✓ Correctly rejected OpenGL 2.1: {}", e),
+    }
 
-    // Demonstrate precision-optimal selection
-    println!("\nPrecision-optimal renderer selection:");
+    // Try invalid MSAA samples
+    match OpenGL3RendererBuilder::new().msaa_samples(3) {
+        Ok(_) => println!("✗ Should have failed with MSAA 3"),
+        Err(e) => println!("✓ Correctly rejected MSAA 3: {}", e),
+    }
 
-    let f32_renderer = registry.create_optimal_for_precision(
-        DataPrecision::F32,
-        ""
-    ).unwrap();
-    println!("  ✓ F32 precision: selected {}", f32_renderer.name());
+    // Try invalid precision through factory
+    let factory = OpenGL3RendererFactory::new();
+    match factory.validate_parameters(DataPrecision::F64, "") {
+        Ok(_) => println!("✗ Should have failed with F64 precision"),
+        Err(e) => println!("✓ Correctly rejected F64: {}", e),
+    }
+}
 
-    let f64_renderer = registry.create_optimal_for_precision(
-        DataPrecision::F64,
-        "threads=8"
-    ).unwrap();
-    println!("  ✓ F64 precision: selected {}", f64_renderer.name());
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    println!();
+    #[test]
+    fn test_factory_demo_main() {
+        // Test that main function runs without panicking
+        assert!(main().is_ok());
+    }
+
+    #[test]
+    fn test_opengl_config_creation() {
+        let config = OpenGL3RendererConfig::default();
+        assert_eq!(config.opengl_version, (3, 3));
+        assert_eq!(config.preferred_precision, DataPrecision::F32);
+        assert_eq!(config.max_splat_count, 1_000_000);
+    }
+
+    #[test]
+    fn test_renderer_builder() {
+        let result = OpenGL3RendererBuilder::new()
+            .max_splat_count(500_000)
+            .preferred_precision(DataPrecision::F16)
+            .build();
+
+        assert_eq!(result.get_data_precision(), DataPrecision::F16);
+        assert_eq!(result.max_splat_count(), 500_000);
+    }
 }
