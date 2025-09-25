@@ -423,35 +423,33 @@ impl ReferenceRendererConfig {
                 "max_splat_count" => {
                     config.max_splat_count = value.parse::<usize>()
                         .map_err(|_| format!("Invalid max_splat_count: {}", value))?;
-                },
+                }
                 "threads" => {
                     config.threads = value.parse::<usize>()
-                        .unwrap_or_else(|_| RendererError::InvalidParameters(
-                            format!("Invalid threads value: {}", value)));
+                        .map_err(|_| format!("Invalid threads value: {}", value))?;
 
                     if config.threads == 0 {
-                        return Err(RendererError::InvalidParameters(
-                            "threads must be greater than 0".to_string()
-                        )).to_string();
+                        return Err("threads must be greater than 0".to_string());
                     }
-                },
+                }
                 "quality" => {
-                    config.quality = value.to_string().clone();
+                    config.quality = value.to_string();
                     match config.quality.as_str() {
                         "low" | "medium" | "high" | "ultra" => {
-                            ;
+                            // Valid quality values
                         }
-                        _ => return Err(RendererError::InvalidParameters(
-                            format!("Invalid quality value: {}. Must be one of: low, medium, high, ultra", config.quality)
-                        )),
+                        _ => {
+                            return Err(format!(
+                                "Invalid quality value: {}. Must be one of: low, medium, high, ultra",
+                                config.quality
+                            ));
+                        }
                     }
-                },
+                }
                 "debug" => {
                     config.debug = value.parse::<bool>()
-                        .map_err(|_| RendererError::InvalidParameters(
-                            format!("Invalid debug value: {}", value)
-                        ))?;
-                },
+                        .map_err(|_| format!("Invalid debug value: {}", value))?;
+                }
                 "viewport_size" => {
                     let parts: Vec<&str> = value.split('x').collect();
                     if parts.len() == 2 {
@@ -460,14 +458,62 @@ impl ReferenceRendererConfig {
                         let height = parts[1].parse::<u32>()
                             .map_err(|_| format!("Invalid viewport height: {}", parts[1]))?;
                         config.viewport_size = (width, height);
+                    } else {
+                        return Err(format!(
+                            "Invalid viewport_size format: {}. Expected format: 'widthxheight' (e.g., '1920x1080')",
+                            value
+                        ));
                     }
-                },
+                }
                 _ => {
+                    // Unknown parameters are ignored (could be made strict by uncommenting below)
+                    // return Err(format!("Unknown parameter: {}", key));
                 }
             }
         }
 
         Ok(config)
+    }
+
+
+    /// Validate that the configuration is valid
+    pub fn validate(&self) -> Result<(), String> {
+        if self.threads == 0 {
+            return Err("threads must be greater than 0".to_string());
+        }
+
+        if self.max_splat_count == 0 {
+            return Err("max_splat_count must be greater than 0".to_string());
+        }
+
+        if self.viewport_size.0 == 0 || self.viewport_size.1 == 0 {
+            return Err("viewport_size width and height must be greater than 0".to_string());
+        }
+
+        match self.quality.as_str() {
+            "low" | "medium" | "high" | "ultra" => {}
+            _ => {
+                return Err(format!(
+                    "Invalid quality: {}. Must be one of: low, medium, high, ultra",
+                    self.quality
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn description(&self) -> String {
+        format!(
+            "ReferenceRenderer Config: {}x{} viewport, {} threads, {} quality, precision: {:?}, max_splats: {}, debug: {}",
+            self.viewport_size.0,
+            self.viewport_size.1,
+            self.threads,
+            self.quality,
+            self.precision,
+            self.max_splat_count,
+            self.debug
+        )
     }
 }
 
@@ -973,5 +1019,85 @@ mod tests {
         assert_eq!(params.get("threads"), Some(&"8".to_string()));
         assert_eq!(params.get("debug"), Some(&"true".to_string()));
         assert_eq!(params.get("quality"), Some(&"ultra".to_string()));
+    }
+
+    #[test]
+    fn test_from_parameters_empty() {
+        let config = ReferenceRendererConfig::from_parameters(DataPrecision::F32, "").unwrap();
+        assert_eq!(config.precision, DataPrecision::F32);
+        assert_eq!(config.quality, "medium");
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_from_parameters_valid() {
+        let params = "threads=8,quality=high,debug=true,max_splat_count=2000000,viewport_size=2560x1440";
+        let config = ReferenceRendererConfig::from_parameters(DataPrecision::F64, params).unwrap();
+
+        assert_eq!(config.precision, DataPrecision::F64);
+        assert_eq!(config.threads, 8);
+        assert_eq!(config.quality, "high");
+        assert_eq!(config.debug, true);
+        assert_eq!(config.max_splat_count, 2_000_000);
+        assert_eq!(config.viewport_size, (2560, 1440));
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_from_parameters_invalid_threads() {
+        let params = "threads=0";
+        let result = ReferenceRendererConfig::from_parameters(DataPrecision::F32, params);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("threads must be greater than 0"));
+    }
+
+    #[test]
+    fn test_from_parameters_invalid_quality() {
+        let params = "quality=extreme";
+        let result = ReferenceRendererConfig::from_parameters(DataPrecision::F32, params);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid quality value"));
+    }
+
+    #[test]
+    fn test_from_parameters_invalid_viewport() {
+        let params = "viewport_size=1920";  // Missing height
+        let result = ReferenceRendererConfig::from_parameters(DataPrecision::F32, params);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid viewport_size format"));
+    }
+
+    #[test]
+    fn test_from_parameters_invalid_numeric() {
+        let params = "threads=abc";
+        let result = ReferenceRendererConfig::from_parameters(DataPrecision::F32, params);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid threads value"));
+    }
+
+    #[test]
+    fn test_validate_config() {
+        let mut config = ReferenceRendererConfig::default();
+        assert!(config.validate().is_ok());
+
+        config.threads = 0;
+        assert!(config.validate().is_err());
+
+        config.threads = 4;
+        config.viewport_size = (0, 1080);
+        assert!(config.validate().is_err());
+
+        config.viewport_size = (1920, 1080);
+        config.quality = "invalid".to_string();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_description() {
+        let config = ReferenceRendererConfig::default();
+        let desc = config.description();
+        assert!(desc.contains("1920x1080"));
+        assert!(desc.contains("medium"));
+        assert!(desc.contains("F32"));
     }
 }

@@ -436,7 +436,7 @@ impl RendererManager {
     }
 
     /// Helper method to acquire the factories lock safely
-    fn get_factories_lock(&self) -> Result<MutexGuard<HashMap<TypeId, Box<dyn RendererFactory>>>, RendererError> {
+    fn get_factories_lock(&self) -> Result<MutexGuard<'_, HashMap<TypeId, Box<dyn RendererFactory>>>, RendererError> {
         self.factories.lock().map_err(|_| {
             RendererError::CreationFailed(
                 "Failed to acquire factories lock".to_string()
