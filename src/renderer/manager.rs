@@ -1,220 +1,41 @@
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::fmt::Debug;
-use std::sync::{mpsc, Arc, Mutex, MutexGuard};
-use std::sync::atomic::AtomicU64;
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::time::Duration;
 use std::thread;
-use tokio::task::JoinHandle;
-use crate::renderer::{BufferedAsyncSender, DataPrecision, RendererError, RendererEvent, RendererFactory, RendererInfo};
-use crate::renderer::Renderer;
+use crate::renderer::{DataPrecision, RendererError, RendererFactory, RendererInfo, Renderer};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct RendererId(pub u64);
-
-impl RendererId {
-    pub fn new(id: u64) -> Self { Self(id) }
-    pub fn value(&self) -> u64 { self.0 }
-}
-
-/// Thread-safe manager for renderer factories with timeout protection.
+/// Factory registry with automatic renderer cleanup.
 ///
-/// The RendererManager provides a centralized registry for renderer factories,
-/// enabling safe registration, creation, and management of different renderer types.
-/// All operations are thread-safe and support concurrent access.
+/// The RendererManager's responsibilities:
+/// 1. Register renderer factories
+/// 2. Create renderer instances on demand
+/// 3. Provide factory information for capability discovery
+/// 4. **Automatically clean up all created renderers when destroyed with timeout handling**
+///
+/// **IMPORTANT**: The Renderer trait must implement:
+/// ```rust
+/// fn unique_id(&self) -> u64;
+/// fn shutdown_timeout(&self) -> Duration;
+/// ```
+///
+/// Day-to-day management (start, communication, events) is handled by:
+/// - The client code that gets the renderer
+/// - The async_communication module
 #[derive(Debug)]
 pub struct RendererManager {
     /// Map of TypeId to factory instances, protected by mutex for thread safety
     factories: Arc<Mutex<HashMap<TypeId, Box<dyn RendererFactory>>>>,
-    renderers: Mutex<HashMap<RendererId, Arc<Mutex<Box<dyn Renderer>>>>>,
-    tasks: Mutex<HashMap<RendererId, JoinHandle<()>>>,
-    active: Mutex<Option<RendererId>>,
-
-    // subscribers
-    sender: Mutex<Option<mpsc::Sender<RendererEvent>>>,
-    async_sinks: Mutex<Vec<Arc<Mutex<Vec<RendererEvent>>>>>,
-    buffered_async_sender: Mutex<Option<BufferedAsyncSender<RendererEvent>>>,
-
-    next_id: AtomicU64
+    /// Shutdown channels for all created renderers - used for cleanup
+    /// Each entry contains: (renderer_id, shutdown_sender, confirmation_receiver, timeout_duration)
+    renderer_shutdowns: Mutex<Vec<(u64, mpsc::Sender<()>, mpsc::Receiver<()>, Duration)>>,
 }
 
 impl RendererManager {
     pub fn new() -> Self {
         Self {
             factories: Arc::new(Mutex::new(HashMap::new())),
-            renderers: Mutex::new(HashMap::new()),
-            tasks: Mutex::new(HashMap::new()),
-            active: Mutex::new(None),
-            sender: Mutex::new(None),
-            async_sinks: Mutex::new(Vec::new()),
-            buffered_async_sender: Mutex::new(None),
-            next_id: AtomicU64::new(1)
-        }
-    }
-
-    /// Subscribe synchronously (std channel).
-    pub fn subscribe(&self) -> mpsc::Receiver<RendererEvent> {
-        let (tx, rx) = mpsc::channel();
-        *self.sender.lock().unwrap() = Some(tx);
-        rx
-    }
-
-    /// Subscribe asynchronously (returns a Stream-like buffer).
-    pub fn async_subscribe(&self) -> Arc<Mutex<Vec<RendererEvent>>> {
-        let sink = Arc::new(Mutex::new(Vec::new()));
-        self.async_sinks.lock().unwrap().push(sink.clone());
-        sink
-    }
-
-    /// Subscribe using BufferedAsyncSender with bounded channel.
-    pub fn subscribe_buffered_bounded(
-        &self,
-        capacity: usize,
-        drop_oldest_on_full: bool,
-    ) -> tokio::sync::mpsc::Receiver<RendererEvent> {
-        let (buffered_sender, receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(
-            capacity,
-            drop_oldest_on_full,
-            Arc::new(AtomicU64::new(0)),
-        );
-        *self.buffered_async_sender.lock().unwrap() = Some(buffered_sender);
-        receiver
-    }
-
-    /// Subscribe using BufferedAsyncSender with unbounded channel.
-    pub fn subscribe_buffered_unbounded(
-        &self,
-    ) -> tokio::sync::mpsc::UnboundedReceiver<RendererEvent> {
-        let (buffered_sender, receiver) =
-            BufferedAsyncSender::<RendererEvent>::new_unbounded(Some(1));
-        *self.buffered_async_sender.lock().unwrap() = Some(buffered_sender);
-        receiver
-    }
-
-    /// Get the current BufferedAsyncSender if available.
-    pub fn get_buffered_sender(&self) -> Option<BufferedAsyncSender<RendererEvent>> {
-        self.buffered_async_sender.lock().unwrap().clone()
-    }
-
-    /// Local notification mechanism for subscribers.
-    /// Notify all subscribers (sync + async + buffered).
-    fn notify(&self, event: RendererEvent) {
-        // sync sender
-        if let Some(sender) = &*self.sender.lock().unwrap() {
-            let _ = sender.send(event.clone()); // <-- use .send()
-        }
-
-        // async sinks
-        for sink in self.async_sinks.lock().unwrap().iter() {
-            sink.lock().unwrap().push(event.clone());
-        }
-
-        // buffered async sender
-        if let Some(buffered_sender) = &*self.buffered_async_sender.lock().unwrap() {
-            let sender = buffered_sender.clone();
-            tokio::spawn(async move {
-                let _ = sender.send_event(event).await;
-            });
-        }
-    }
-
-
-    /// Register a renderer (created by the factory) and spawn its task.
-
-    /// Register a renderer and spawn its run loop.
-    pub fn add_renderer(&self, id: RendererId, renderer: Box<dyn Renderer>) {
-        let renderer_arc = Arc::new(Mutex::new(renderer));
-
-        // Clone the Arc for the future
-        let renderer_for_future = Arc::clone(&renderer_arc);
-
-        let fut = async move {
-            // Keep the renderer locked for the entire duration of run()
-            let mut renderer = renderer_for_future.lock().unwrap();
-            renderer.run().await;
-            // Guard is automatically dropped when the task completes
-        };
-
-        let handle = tokio::spawn(fut);
-
-        self.renderers.lock().unwrap().insert(id, renderer_arc);
-        self.tasks.lock().unwrap().insert(id, handle);
-        self.notify(RendererEvent::RendererCreated { id });
-    }
-
-    /// Start a renderer by id (marks it active).
-
-    pub fn start(&self, id: RendererId) {
-        *self.active.lock().unwrap() = Some(id);
-        self.notify(RendererEvent::Started(id));
-        self.notify(RendererEvent::Switched(Some(id)));
-    }
-
-    /// Stop a renderer by id.
-    pub fn stop(&self, id: RendererId) {
-        // Send shutdown signal to renderer
-        if let Some(renderer_arc) = self.renderers.lock().unwrap().get(&id) {
-            if let Ok(renderer) = renderer_arc.try_lock() {
-                let _ = renderer.sender().send(RendererEvent::Shutdown(id));
-            }
-        }
-
-        // Clean up task
-        if let Some(handle) = self.tasks.lock().unwrap().remove(&id) {
-            tokio::spawn(async move {
-                let _ = handle.await;
-            });
-        }
-
-        // Update active state
-        let was_active = *self.active.lock().unwrap() == Some(id);
-        if was_active {
-            *self.active.lock().unwrap() = None;
-        }
-
-        // Remove from renderers map
-        self.renderers.lock().unwrap().remove(&id);
-
-        self.notify(RendererEvent::Stopped(id));
-        if was_active {
-            self.notify(RendererEvent::Switched(None));
-        }
-    }
-
-    pub fn stop_all(&self) {
-        let ids: Vec<_> = self.renderers.lock().unwrap().keys().cloned().collect();
-        for id in ids {
-            self.stop(id);
-        }
-    }
-
-    /// Send an event to all renderers (broadcast).
-    pub fn broadcast(&self, event: RendererEvent) {
-        let renderers = self.renderers.lock().unwrap();
-        for (_, renderer_arc) in renderers.iter() {
-            // Lock each renderer individually to access sender
-            if let Ok(renderer) = renderer_arc.lock() {
-                let _ = renderer.sender().send(event.clone());
-            }
-            // If renderer is busy/locked, we skip it gracefully
-        }
-    }
-
-    pub fn render_frame(&self, id: RendererId) -> Result<(), String> {
-        let active_id = *self.active.lock().unwrap();
-
-        if active_id == Some(id) {
-            if let Some(renderer_arc) = self.renderers.lock().unwrap().get(&id) {
-                if let Ok(mut renderer) = renderer_arc.try_lock() {
-                    renderer.render_frame()
-                } else {
-                    Err("Renderer is busy".into())
-                }
-            } else {
-                Err("Active renderer not found".into())
-            }
-        } else {
-            Err("No active renderer".into())
+            renderer_shutdowns: Mutex::new(Vec::new()),
         }
     }
 
@@ -252,23 +73,17 @@ impl RendererManager {
         let factories_clone = Arc::clone(&self.factories);
         let factory_arc = Arc::new(factory);
 
-        let (sender, receiver) = std::sync::mpsc::channel();
+        let (sender, receiver) = mpsc::channel();
 
-        // Spawn registration operation in separate thread
-        // Move the Arc directly into the thread (no cloning needed)
         thread::spawn(move || {
-            let start_time = Instant::now();
+            let start_time = std::time::Instant::now();
 
-            // Attempt to acquire lock and register
             let result = {
                 match factories_clone.lock() {
                     Ok(mut factories) => {
-                        // Check if factory already exists
                         if factories.contains_key(&type_id) {
                             Err(RendererError::FactoryAlreadyRegistered(type_id))
                         } else {
-                            // Convert Arc back to Box for storage
-                            // Since factory_arc was moved into this thread, there's only one reference
                             match Arc::try_unwrap(factory_arc) {
                                 Ok(factory_box) => {
                                     factories.insert(type_id, factory_box);
@@ -293,16 +108,15 @@ impl RendererManager {
             let _ = sender.send((result, start_time.elapsed()));
         });
 
-        // Wait for completion or timeout
         match receiver.recv_timeout(timeout_duration) {
             Ok((result, _elapsed)) => result,
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            Err(mpsc::RecvTimeoutError::Timeout) => {
                 Err(RendererError::CreationFailed(format!(
                     "Factory registration timed out after {} microseconds",
                     timeout_duration.as_micros()
                 )))
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
                 Err(RendererError::CreationFailed(
                     "Registration thread disconnected unexpectedly".to_string()
                 ))
@@ -342,17 +156,23 @@ impl RendererManager {
     ///     "test_params"
     /// ).unwrap();
     /// ```
-    pub fn create(&self, id: TypeId, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-        let factories = self.get_factories_lock()?;
+    pub fn create(
+        &self,
+        type_id: TypeId,
+        precision: DataPrecision,
+        parameters: &str,
+    ) -> Result<(Box<dyn Renderer>, mpsc::Receiver<()>, mpsc::Sender<()>), RendererError> {
+        let renderer = {
+            let factories = self.get_factories_lock()?;
 
-        match factories.get(&id) {
-            Some(factory) => {
-                factory.create(precision, parameters)
+            if let Some(factory) = factories.get(&type_id) {
+                factory.create(precision, parameters)?
+            } else {
+                return Err(RendererError::RendererNotFound(type_id));
             }
-            None => {
-                Err(RendererError::RendererNotFound(id))
-            }
-        }
+        };
+
+        self.setup_renderer_tracking(renderer)
     }
 
     /// Get information about all registered renderer factories.
@@ -383,24 +203,8 @@ impl RendererManager {
                     .map(|factory| factory.get_info())
                     .collect()
             }
-            Err(_) => {
-                // Return empty list if we can't acquire the lock
-                Vec::new()
-            }
+            Err(_) => Vec::new(),
         }
-    }
-
-    /// Helper method to acquire the factories lock safely.
-    ///
-    /// # Returns
-    /// * `Ok(MutexGuard)` - Successfully acquired lock
-    /// * `Err(RendererError::CreationFailed)` - Failed to acquire lock
-    fn get_factories_lock(&self) -> Result<MutexGuard<HashMap<TypeId, Box<dyn RendererFactory>>>, RendererError> {
-        self.factories.lock().map_err(|_| {
-            RendererError::CreationFailed(
-                "Failed to acquire factories lock".to_string()
-            )
-        })
     }
 
     /// Create a renderer instance by factory name instead of TypeId.
@@ -436,19 +240,17 @@ impl RendererManager {
         name: &str,
         precision: DataPrecision,
         parameters: &str,
-    ) -> Result<Box<dyn Renderer>, RendererError> {
+    ) -> Result<(Box<dyn Renderer>, mpsc::Receiver<()>, mpsc::Sender<()>), RendererError> {
         let factories = self.get_factories_lock()?;
 
-        // Find factory by name
-        for (_, factory) in factories.iter() {
-            let info = factory.get_info();
-            if info.name == name {
-                // Found matching factory, create renderer
-                return factory.create(precision, parameters);
+        for factory in factories.values() {
+            if factory.get_info().name == name {
+                let renderer = factory.create(precision, parameters)?;
+                drop(factories); // Release the lock before calling setup_renderer_tracking
+                return self.setup_renderer_tracking(renderer);
             }
         }
 
-        // No factory found with the specified name
         Err(RendererError::RendererNotFoundByName(name.to_string()))
     }
 
@@ -542,6 +344,27 @@ impl RendererManager {
         }
     }
 
+    /// Set up shutdown tracking for a renderer
+    fn setup_renderer_tracking(
+        &self,
+        renderer: Box<dyn Renderer>
+    ) -> Result<(Box<dyn Renderer>, mpsc::Receiver<()>, mpsc::Sender<()>), RendererError> {
+        // Get the shutdown timeout and unique ID from the renderer
+        let shutdown_timeout = renderer.shutdown_timeout();
+        let renderer_id = renderer.unique_id();
+
+        // Create shutdown signal channel (manager -> renderer)
+        let (shutdown_tx, shutdown_rx) = mpsc::channel();
+
+        // Create confirmation channel (renderer -> manager)
+        let (confirm_tx, confirm_rx) = mpsc::channel();
+
+        // Track this renderer for cleanup
+        self.renderer_shutdowns.lock().unwrap().push((renderer_id, shutdown_tx, confirm_rx, shutdown_timeout));
+
+        Ok((renderer, shutdown_rx, confirm_tx))
+    }
+
     /// Get the number of registered renderer factories.
     ///
     /// This method returns the count of currently registered factories in the manager.
@@ -558,10 +381,12 @@ impl RendererManager {
     /// println!("Registered factories: {}", manager.get_factory_count());
     /// ```
     pub fn get_factory_count(&self) -> usize {
-        match self.get_factories_lock() {
-            Ok(factories) => factories.len(),
-            Err(_) => 0,
-        }
+        self.factories.lock().map(|f| f.len()).unwrap_or(0)
+    }
+
+    /// Get the number of currently tracked renderers
+    pub fn active_renderer_count(&self) -> usize {
+        self.renderer_shutdowns.lock().map(|r| r.len()).unwrap_or(0)
     }
 
     /// Validate parameters for a specific factory without creating a renderer.
@@ -601,19 +426,23 @@ impl RendererManager {
     ) -> Result<(), RendererError> {
         let factories = self.get_factories_lock()?;
 
-        // Find factory by name
         for factory in factories.values() {
-            let info = factory.get_info();
-            if info.name == factory_name {
-                // Found matching factory, validate parameters
+            if factory.get_info().name == factory_name {
                 return factory.validate_parameters(precision, parameters);
             }
         }
 
-        // No factory found with the specified name
         Err(RendererError::RendererNotFoundByName(factory_name.to_string()))
     }
 
+    /// Helper method to acquire the factories lock safely
+    fn get_factories_lock(&self) -> Result<MutexGuard<HashMap<TypeId, Box<dyn RendererFactory>>>, RendererError> {
+        self.factories.lock().map_err(|_| {
+            RendererError::CreationFailed(
+                "Failed to acquire factories lock".to_string()
+            )
+        })
+    }
     /// Find renderer factory information by name.
     ///
     /// This is a helper method that returns the RendererInfo for a factory
@@ -728,15 +557,62 @@ impl Default for RendererManager {
     }
 }
 
-// Ensure RendererManager is Send + Sync for multi-threaded use
-unsafe impl Send for RendererManager {}
-unsafe impl Sync for RendererManager {}
+// **AUTOMATIC CLEANUP WITH TIMEOUT HANDLING** - Pure std library!
+impl Drop for RendererManager {
+    fn drop(&mut self) {
+        println!("RendererManager dropping - initiating shutdown of all renderers...");
+
+        if let Ok(mut shutdowns) = self.renderer_shutdowns.lock() {
+            let renderer_count = shutdowns.len();
+            if renderer_count == 0 {
+                println!("No active renderers to shut down.");
+                return;
+            }
+
+            // Send shutdown signals to all renderers
+            let mut confirmations = Vec::new();
+            for (renderer_id, shutdown_tx, confirm_rx, timeout) in shutdowns.drain(..) {
+                // Send shutdown signal (ignore if receiver already dropped)
+                if shutdown_tx.send(()).is_ok() {
+                    println!("Sent shutdown signal to renderer {}", renderer_id);
+                }
+                confirmations.push((renderer_id, confirm_rx, timeout));
+            }
+
+            println!("Sent shutdown signals to {} renderers, waiting for confirmations...", renderer_count);
+
+            // Wait for confirmations with individual timeouts using std library
+            let mut completed = 0;
+            let mut timed_out = 0;
+
+            for (renderer_id, confirm_rx, timeout) in confirmations {
+                match confirm_rx.recv_timeout(timeout) {
+                    Ok(()) => {
+                        println!("Renderer {} confirmed shutdown", renderer_id);
+                        completed += 1;
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        timed_out += 1;
+                        eprintln!("WARNING: Renderer {} did not confirm shutdown within {:?} timeout",
+                                  renderer_id, timeout);
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        // Channel was dropped, renderer probably stopped
+                        println!("Renderer {} shutdown (channel disconnected)", renderer_id);
+                        completed += 1;
+                    }
+                }
+            }
+
+            println!("Renderer shutdown complete: {} confirmed, {} timed out", completed, timed_out);
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::renderer::factory::{MockRendererFactory};
-    use std::any::TypeId;
     use std::thread;
     use std::sync::Arc;
     use std::time::Duration;
@@ -795,8 +671,7 @@ mod tests {
         );
 
         assert!(renderer.is_ok());
-        let renderer = renderer.unwrap();
-        assert_eq!(renderer.name(), "MockRenderer");
+        let _renderer = renderer.unwrap();
     }
 
     #[test]

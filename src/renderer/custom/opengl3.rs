@@ -5,7 +5,7 @@
 //! shaders, vertex buffer objects, and framebuffer objects to achieve
 //! high-performance real-time rendering.
 
-use crate::renderer::{Capability, ProcessingUnitCapability, Renderer, DataPrecision, RendererEvent, BufferedAsyncSender};
+use crate::renderer::{Capability, ProcessingUnitCapability, Renderer, DataPrecision, RendererEvent, BufferedAsyncSender, generate_renderer_id};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -307,6 +307,9 @@ impl crate::renderer::factory::RendererFactory for OpenGL3RendererFactory {
 /// - **GPU memory**: Scales with splat count and texture resolution
 #[derive(Debug)]
 pub struct OpenGL3Renderer {
+    /// Unique ID for this renderer instance - generated once, never changes
+    id: u64,
+
     config: OpenGL3RendererConfig,
     current_precision: DataPrecision,
     is_running: bool,
@@ -325,10 +328,12 @@ pub struct OpenGL3Renderer {
 impl OpenGL3Renderer {
     /// Create a new OpenGL3 renderer with the given configuration.
     pub fn new(config: OpenGL3RendererConfig) -> Self {
+        let id = generate_renderer_id();
         let current_precision = config.preferred_precision;
         let (buffered_sender, buffered_receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(Option::<usize>::Some(100));
 
         Self {
+            id,
             config,
             current_precision,
             is_running: false,
@@ -453,6 +458,14 @@ impl ProcessingUnitCapability for OpenGL3Renderer {
 }
 
 impl Renderer for OpenGL3Renderer {
+    fn unique_id(&self) -> u64 {
+        self.id  // ← Simply return the stored ID
+    }
+
+    fn shutdown_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(1000) // 1 second for reference renderer
+    }
+
     fn start(&mut self) -> Result<(), String> {
         if self.is_running {
             return Err("OpenGL3 renderer is already running".to_string());

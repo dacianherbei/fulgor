@@ -31,7 +31,6 @@ use super::async_channel::AsyncChannelConfig;
 /// ```rust
 /// use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
 /// use fulgor::renderer::RendererEvent;
-/// use fulgor::renderer::RendererId;
 /// use futures::StreamExt;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -41,7 +40,7 @@ use super::async_channel::AsyncChannelConfig;
 ///
 /// // Send an event
 /// sender.send(RendererEvent::FrameRendered {
-///     id: RendererId(1),
+///     renderer_id: 1,
 ///     frame_number: 1,
 ///     frame_time_microseconds: 0,
 ///     render_time_ns: 1667
@@ -463,7 +462,6 @@ mod tests {
     use crate::renderer::{RendererEvent};
     use futures::StreamExt;
     use tokio::time::{Duration};
-    use crate::renderer::manager::RendererId;
 
     #[tokio::test]
     async fn test_async_event_receiver_basic_functionality() {
@@ -479,7 +477,7 @@ mod tests {
 
         // Send an event
         let test_event = RendererEvent::FrameRendered {
-            id: RendererId(1),
+            renderer_id: 1,
             frame_number: 42,
             frame_time_microseconds: 0,
             render_time_ns: 1667,
@@ -520,18 +518,18 @@ mod tests {
         // Send some events
         let test_events = vec![
             RendererEvent::FrameRendered {
-                id: RendererId(1),
+                renderer_id: 1,
                 frame_number: 1,
                 frame_time_microseconds: 0,
                 render_time_ns: 1000,
             },
             RendererEvent::ViewportResized {
-                id: RendererId(1),
+                renderer_id: 1,
                 width: 1920,
                 height: 1080,
             },
             RendererEvent::SplatDataUpdated {
-                id: RendererId(1),
+                renderer_id: 1,
                 splat_count: 50000
             },
         ];
@@ -568,7 +566,7 @@ mod tests {
 
         // Send one event then close channel
         let test_event = RendererEvent::ViewportResized {
-            id: RendererId(1),
+            renderer_id: 1,
             width: 800,
             height: 600,
         };
@@ -604,7 +602,7 @@ mod tests {
         let event_receiver1 = AsyncEventReceiver::new(receiver, config);
         let event_receiver2 = event_receiver1.clone();
 
-        let test_event = RendererEvent::SplatDataUpdated {id: RendererId(1), splat_count: 100000 };
+        let test_event = RendererEvent::SplatDataUpdated {renderer_id: 1, splat_count: 100000 };
 
         sender.send(test_event).await.expect("Failed to send event");
 

@@ -15,62 +15,62 @@ use std::fmt::{self, Debug};
 use std::sync::{Arc, Mutex};
 pub use crate::renderer::async_communication::sender::BufferedAsyncSender;
 pub use factory::{RendererInfo, RendererFactory, MockRenderer, MockRendererFactory};
-use std::future::Future;
-use std::pin::Pin;
 use tokio::sync::mpsc::{UnboundedReceiver};
-pub use crate::renderer::manager::RendererId;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::pin::Pin;
+use std::future::Future;
 
-/// Events emitted by renderer components in the fulgor engine.
-///
-/// These events represent significant state changes in the rendering system
-/// and can be used for monitoring, debugging, and coordinating between
-/// different parts of the application.
+// Global counter for generating unique renderer IDs
+static NEXT_RENDERER_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Helper function to generate unique renderer IDs
+pub fn generate_renderer_id() -> u64 {
+    NEXT_RENDERER_ID.fetch_add(1, Ordering::SeqCst)
+}
+
+/// Updated RendererEvent enum with renderer_id instead of RendererId
 #[derive(Debug, Clone)]
 pub enum RendererEvent {
     /// A renderer has been created.
     RendererCreated {
-        id: RendererId
+        renderer_id: u64
     },
 
     /// A renderer has been destroyed.
-    Shutdown (RendererId),
+    Shutdown(u64), // renderer_id
 
     /// A renderer has been started.
-    Started (RendererId),
+    Started(u64), // renderer_id
 
     /// A renderer has been stopped.
-    Stopped (RendererId),
+    Stopped(u64), // renderer_id
 
     /// The data precision for computations has been changed.
     DataPrecisionChanged {
-        id:RendererId,
+        renderer_id: u64,
         old_precision: DataPrecision,
         new_precision: DataPrecision
     },
 
     /// The active renderer has been switched.
-    ///
-    /// Emitted when the rendering system switches from one backend to another.
-    /// The `Option<RendererKind>` represents the new active renderer:
-    /// - `Some(RendererKind)` indicates a switch to the specified backend
-    /// - `None` indicates no renderer is currently active
-    Switched(Option<RendererId>),
+    Switched(Option<u64>), // renderer_id
+
     /// Viewport has been resized.
     ViewportResized {
-        id:RendererId,
+        renderer_id: u64,
         width: u32,
         height: u32
     },
 
     /// Splat data has been updated.
     SplatDataUpdated {
-        id:RendererId,
+        renderer_id: u64,
         splat_count: usize
     },
 
     /// A frame has been rendered.
     FrameRendered {
-        id:RendererId,
+        renderer_id: u64,  // ← This is the key change!
         frame_number: u64,
         frame_time_microseconds: u64,
         render_time_ns: u64
@@ -78,9 +78,49 @@ pub enum RendererEvent {
 
     /// An error occurred.
     RendererError {
-        id:RendererId,
+        renderer_id: u64,
         message: String,
     },
+}
+
+/// Updated Renderer trait with unique_id method
+pub trait Renderer: Send + Debug {
+    /// Get the unique ID for this renderer instance.
+    /// This ID is generated once when the renderer is created and never changes.
+    fn unique_id(&self) -> u64;
+
+    /// Set the data precision for this renderer.
+    fn set_data_precision(&mut self, precision: DataPrecision) -> Result<DataPrecision, String>;
+
+    /// Get the current data precision for this renderer.
+    fn get_data_precision(&self) -> DataPrecision;
+
+    /// Check if the renderer is currently running.
+    fn is_running(&self) -> bool;
+
+    /// Get the total number of frames rendered.
+    fn get_frame_count(&self) -> u64;
+
+    /// Start the renderer
+    fn start(&mut self) -> Result<(), String>;
+
+    /// Stop the renderer
+    fn stop(&mut self);
+
+    /// Get the renderer's name
+    fn name(&self) -> &'static str;
+
+    /// Render a single frame
+    fn render_frame(&mut self) -> Result<(), String>;
+
+    /// Get the sender for communicating with this renderer
+    fn sender(&self) -> async_communication::BufferedAsyncSender<RendererEvent>;
+
+    /// How long this renderer needs to shut down gracefully
+    fn shutdown_timeout(&self) -> std::time::Duration;
+
+    /// Run the renderer until it receives a shutdown signal
+    fn run(&mut self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
 }
 
 /// Base trait for all capabilities in the fulgor rendering system.
@@ -138,63 +178,6 @@ pub trait ProcessingUnitCapability: Capability {
     fn preferred_precision(&self) -> Option<DataPrecision>;
 }
 
-/// Enhanced renderer trait that supports precision management.
-///
-/// This trait provides renderer-specific functionality including precision switching and
-/// configuration management while maintaining compatibility with the existing factory system.
-///
-/// ## Trait Composition
-///
-/// This trait includes all necessary bounds for renderer implementations:
-/// - `Send + Sync` for thread safety
-/// - `Debug` for debugging and logging
-/// - Methods from both factory operations and enhanced precision management
-///
-/// This design allows the enhanced renderer to work seamlessly with the existing
-/// factory system while providing advanced precision and capability management.
-pub trait Renderer: Send + Debug {
-    /// Set the data precision for this renderer.
-    ///
-    /// Attempts to change the internal data precision used for computations.
-    /// The returned precision may differ from the requested precision if
-    /// the exact precision is not supported.
-    ///
-    /// # Arguments
-    /// * `precision` - The desired data precision
-    ///
-    /// # Returns
-    /// * `Ok(DataPrecision)` - The actual precision that was set
-    /// * `Err(String)` - Error message if the precision change failed
-    fn set_data_precision(&mut self, precision: DataPrecision) -> Result<DataPrecision, String>;
-
-    /// Get the current data precision for this renderer.
-    ///
-    /// # Returns
-    /// The currently active data precision
-    fn get_data_precision(&self) -> DataPrecision;
-
-    /// Check if the renderer is currently running.
-    fn is_running(&self) -> bool;
-
-    /// Get the total number of frames rendered.
-    fn get_frame_count(&self) -> u64;
-
-    /// Start the renderer
-    fn start(&mut self) -> Result<(), String>;
-
-    /// Stop the renderer
-    fn stop(&mut self);
-
-    /// Get the renderer's name
-    fn name(&self) -> &'static str;
-
-    fn render_frame(&mut self) -> Result<(), String>;
-
-    fn sender(&self) -> async_communication::BufferedAsyncSender<RendererEvent>;
-    /// Run the renderer until it receives a Shutdown event.
-    fn run(&mut self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>>;
-}
-
 /// A reference implementation of a renderer that provides basic functionality.
 ///
 /// This renderer serves as a baseline implementation that can be used for
@@ -203,6 +186,9 @@ pub trait Renderer: Send + Debug {
 /// CPU/GPU unified rendering capabilities.
 #[derive(Debug)]
 pub struct ReferenceRenderer {
+    /// Unique ID for this renderer instance - generated once, never changes
+    id: u64,
+
     /// Current data precision for computations
     precision: DataPrecision,
 
@@ -217,24 +203,27 @@ pub struct ReferenceRenderer {
 }
 
 impl ReferenceRenderer {
-    /// Create a new reference renderer with default settings.
-    ///
-    /// The renderer starts with F32 precision and in a stopped state.
+    /// Create a new reference renderer with a unique ID
     pub fn new() -> Self {
-        let (buffered_sender, buffered_receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(Option::<usize>::Some(100));
+        let id = generate_renderer_id();
+        let (sender, receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(None);
+
         Self {
+            id,  // ← Unique ID generated here
             precision: DataPrecision::F32,
             is_running: false,
             frame_count: 0,
-            sender: buffered_sender,
-            receiver: buffered_receiver
+            sender,
+            receiver,
         }
     }
 
     /// Create a new reference renderer with specified precision.
     pub fn with_precision(precision: DataPrecision) -> Self {
+        let id = generate_renderer_id();
         let (buffered_sender, buffered_receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(Option::<usize>::Some(100));
         Self {
+            id,
             precision,
             is_running: false,
             frame_count: 0,
@@ -271,6 +260,14 @@ impl ProcessingUnitCapability for ReferenceRenderer {
 }
 
 impl Renderer for ReferenceRenderer {
+    fn unique_id(&self) -> u64 {
+        self.id  // ← Simply return the stored ID
+    }
+
+    fn shutdown_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(1000) // 1 second for reference renderer
+    }
+
     fn start(&mut self) -> Result<(), String> {
         if self.is_running {
             Err("Renderer is already running".to_string())
@@ -293,8 +290,20 @@ impl Renderer for ReferenceRenderer {
             return Err("Renderer is not running".to_string());
         }
 
+        // Do rendering work...
         self.frame_count += 1;
-        // In a real implementation, this would perform actual rendering
+
+        // Emit event with renderer_id instead of RendererId
+        let event = RendererEvent::FrameRendered {
+            renderer_id: self.unique_id(),  // ← Use unique_id()
+            frame_number: self.frame_count,
+            frame_time_microseconds: 16666, // ~60fps
+            render_time_ns: 1_000_000,
+        };
+
+        // Send event (ignore if no subscribers)
+        let _ = self.sender.send(event);
+
         Ok(())
     }
 
@@ -714,7 +723,7 @@ mod tests {
     #[test]
     fn test_data_precision_changed_event() {
         let event = RendererEvent::DataPrecisionChanged {
-            id: RendererId(1),
+            renderer_id: generate_renderer_id(),
             old_precision: DataPrecision::F32,
             new_precision: DataPrecision::F64,
         };

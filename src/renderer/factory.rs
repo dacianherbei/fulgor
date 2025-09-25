@@ -5,7 +5,7 @@ use std::future::Future;
 use std::pin::Pin;
 use tokio::sync::mpsc::{UnboundedReceiver};
 pub(crate) use crate::renderer::{DataPrecision, Renderer, RendererError};
-use crate::renderer::{BufferedAsyncSender, RendererEvent};
+use crate::renderer::{generate_renderer_id, BufferedAsyncSender, RendererEvent};
 
 pub fn parse_parameters(parameters: &str) -> HashMap<String, String> {
     let mut result = HashMap::new();
@@ -162,6 +162,8 @@ pub trait RendererFactory: Send + Sync + Any + Debug {
 /// Mock renderer implementation for testing
 #[derive(Debug)]
 pub struct MockRenderer {
+    /// Unique ID for this renderer instance - generated once, never changes
+    id: u64,
     name: &'static str,
     started: bool,
     precision: DataPrecision,
@@ -172,8 +174,10 @@ pub struct MockRenderer {
 
 impl MockRenderer {
     pub fn new(name: &'static str, precision: DataPrecision) -> Self {
+        let id = generate_renderer_id();
         let (buffered_sender, buffered_receiver) = BufferedAsyncSender::<RendererEvent>::new_unbounded(Option::<usize>::Some(100));
         Self {
+            id,
             name,
             started: false,
             precision,
@@ -192,6 +196,13 @@ impl MockRenderer {
 }
 
 impl Renderer for MockRenderer {
+    fn unique_id(&self) -> u64 {
+        self.id  // ← Simply return the stored ID
+    }
+
+    fn shutdown_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(1000) // 1 second for reference renderer
+    }
 
     fn set_data_precision(&mut self, precision: DataPrecision) -> Result<DataPrecision, String> {
         todo!()
@@ -234,7 +245,7 @@ impl Renderer for MockRenderer {
         self.sender.clone()
     }
 
-    fn run(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+    fn run(&mut self) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
         Box::pin(async move {
             while let Some(event) = self.receiver.recv().await {
                 match event {
