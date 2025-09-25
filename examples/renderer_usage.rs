@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 1: Create GPU renderer with fallback
     println!("\n=== GPU Renderer with Fallback ===");
-    let renderer = manager.create_by_name("gpu_acceleration", DataPrecision::F32, "msaa_samples=8")
+    let (renderer, _rx, _tx) = manager.create_by_name("gpu_acceleration", DataPrecision::F32, "msaa_samples=8")
         .or_else(|_| manager.create_by_name("basic_rendering", DataPrecision::F32, ""))
         .expect("No renderer available");
 
@@ -32,13 +32,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .min_by_key(|info| info.timeout_microseconds)
         .expect("No Gaussian splatting renderer");
 
-    let best_renderer = manager.create_by_name(&best_info.name, DataPrecision::F32, "")?;
+    let (best_renderer, _rx, _tx) = manager.create_by_name(&best_info.name, DataPrecision::F32, "")?;
     println!("Best renderer: {}", best_renderer.name());
 
     // Example 3: List GPU-capable renderers
     println!("\n=== GPU-Capable Renderers ===");
     let gpu_renderers = manager.find_factory_by_name("gpu_acceleration");
-    for info in gpu_renderers {
+    if let Some(info) = gpu_renderers {
         println!("- {} (timeout: {}μs)", info.name, info.timeout_microseconds);
     }
 

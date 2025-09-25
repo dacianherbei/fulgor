@@ -3,7 +3,7 @@
 //! This example demonstrates how to use the AsyncEventReceiver with
 //! different event types and configurations, showing the template flexibility.
 
-use fulgor::renderer::{RendererEvent, RendererKind};
+use fulgor::renderer::{RendererEvent};
 use fulgor::{AsyncEventReceiver, AsyncChannelConfig};
 use async_channel;
 use futures::StreamExt;
@@ -35,11 +35,12 @@ async fn await_renderer_events_example() -> Result<(), Box<dyn std::error::Error
     println!("\n--- Renderer Events Example (High-Throughput Config) ---");
 
     // Create a high-throughput configuration optimized for rendering workloads
-    let config = AsyncChannelConfig::<f64>::high_throughput(0.001);
-    println!("Using config - Buffer: {}, Backpressure: {}, Precision: {}",
+    let config = AsyncChannelConfig{ maximum_buffer_size: 0, send_timeout: Some(Duration::from_millis(5)), enable_backpressure: false, statistics_interval: Default::default() };
+    println!("Using config - Buffer: {}, Send Timeout: {:?}, Backpressure: {}, Statistics Interval: {:?}",
              config.maximum_buffer_size,
-             config.has_backpressure(),
-             config.precision_threshold());
+             config.send_timeout.unwrap(),
+             config.enable_backpressure,
+             config.statistics_interval);
 
     // Create an unbounded channel for RendererEvent
     let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
@@ -47,16 +48,16 @@ async fn await_renderer_events_example() -> Result<(), Box<dyn std::error::Error
 
     // Send some example events
     let events = vec![
-        RendererEvent::ViewportResized { width: 1920, height: 1080 },
-        RendererEvent::SplatDataUpdated { splat_count: 150000 },
+        RendererEvent::ViewportResized { renderer_id: 1, width: 1920, height: 1080 },
+        RendererEvent::SplatDataUpdated { renderer_id: 1, splat_count: 150000 },
         RendererEvent::FrameRendered {
-            renderer_kind: RendererKind::CpuReference,
+            renderer_id: 1,
             frame_number: 1,
             frame_time_microseconds: 0,
             render_time_ns: 1667
         },
         RendererEvent::FrameRendered {
-            renderer_kind: RendererKind::CpuReference,
+            renderer_id: 1,
             frame_number: 2,
             frame_time_microseconds: 0,
             render_time_ns: 1532
@@ -92,16 +93,16 @@ async fn await_renderer_events_example() -> Result<(), Box<dyn std::error::Error
                         frame_count += 1;
                         println!("  Processed frame {} in {:.2}µs", frame_number, render_time_ns);
                     }
-                    RendererEvent::ViewportResized { width, height } => {
+                    RendererEvent::ViewportResized { renderer_id: 1, width, height } => {
                         println!("  Viewport resized to {}x{}", width, height);
                     }
-                    RendererEvent::SplatDataUpdated { splat_count } => {
+                    RendererEvent::SplatDataUpdated { renderer_id: 1, splat_count } => {
                         println!("  Splat data updated with {} splats", splat_count);
                     }
-                    RendererEvent::Error { message, .. } => {
+                    RendererEvent::RendererError{ message, .. } => {
                         println!("  Render error: {}", message);
                     }
-                    RendererEvent::ShutdownRequested => {
+                    RendererEvent::Shutdown{ .. } => {
                         println!("  Shutdown requested");
                         break;
                     }
@@ -135,7 +136,7 @@ async fn await_custom_events_example() -> Result<(), Box<dyn std::error::Error>>
     }
 
     // Create a low-latency configuration with f32 precision for real-time applications
-    let config = AsyncChannelConfig::<f32>::low_latency(0.001f32);
+    let config = AsyncChannelConfig::low_latency(0.001f32);
     println!("Using f32 precision config - Buffer: {}, Timeout: {:?}",
              config.maximum_buffer_size,
              config.timeout());
@@ -191,7 +192,7 @@ async fn await_custom_events_example() -> Result<(), Box<dyn std::error::Error>>
     }
 
     println!("Custom events received: {}", event_receiver.received_events_count());
-    println!("Configuration precision threshold: {}", event_receiver.configuration().precision_threshold());
+    println!("Configuration precision threshold: {}", event_receiver.configuration().precision());
     Ok(())
 }
 
@@ -206,7 +207,7 @@ async fn await_stream_interface_example() -> Result<(), Box<dyn std::error::Erro
     }
 
     // Use bounded configuration with backpressure for stream processing
-    let config = AsyncChannelConfig::<f64>::bounded_with_backpressure(5);
+    let config = AsyncChannelConfig::bounded_with_backpressure(5);
     let (sender, receiver) = async_channel::bounded::<StreamEvent>(10);
     let mut event_receiver = AsyncEventReceiver::new(receiver, config);
 
@@ -253,11 +254,9 @@ async fn await_configuration_showcase() -> Result<(), Box<dyn std::error::Error>
 
     // Example with different configurations
     let configs = vec![
-        ("Default f64", AsyncChannelConfig::<f64>::default()),
-        ("Unbounded", AsyncChannelConfig::<f64>::unbounded()),
-        ("Bounded(100)", AsyncChannelConfig::<f64>::bounded(100)),
-        ("Low-latency f32", AsyncChannelConfig::<f64>::low_latency(0.1f64)),
-        ("High-throughput", AsyncChannelConfig::<f64>::high_throughput(0.01)),
+        ("Default f64", AsyncChannelConfig::default()),
+        ("Unbounded", AsyncChannelConfig::unbounded()),
+        ("Bounded(100)", AsyncChannelConfig::bounded(100))
     ];
 
     for (name, config) in configs {
