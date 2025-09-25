@@ -14,12 +14,6 @@ use crate::renderer::{DataPrecision, RendererError, RendererFactory, RendererInf
 /// 4. **Automatically clean up all created renderers when destroyed with timeout handling**
 ///
 /// **IMPORTANT**: The Renderer trait must implement:
-/// ```rust
-/// use std::time::Duration;
-///
-/// fn unique_id(&self) -> u64;
-/// fn shutdown_timeout(&self) -> Duration;
-/// ```
 ///
 /// Day-to-day management (start, communication, events) is handled by:
 /// - The client code that gets the renderer

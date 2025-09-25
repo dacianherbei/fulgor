@@ -197,27 +197,29 @@ impl MockRenderer {
 
 impl Renderer for MockRenderer {
     fn unique_id(&self) -> u64 {
-        self.id  // ← Simply return the stored ID
+        self.id
     }
 
     fn shutdown_timeout(&self) -> std::time::Duration {
-        std::time::Duration::from_millis(1000) // 1 second for reference renderer
+        std::time::Duration::from_millis(1000)
     }
 
-    fn set_data_precision(&mut self, _: DataPrecision) -> Result<DataPrecision, String> {
-        todo!()
+    fn set_data_precision(&mut self, precision: DataPrecision) -> Result<DataPrecision, String> {
+        let old_precision = self.precision;
+        self.precision = precision;
+        Ok(old_precision)
     }
 
     fn get_data_precision(&self) -> DataPrecision {
-        todo!()
+        self.precision  // ← Simply return the stored precision field
     }
 
     fn is_running(&self) -> bool {
-        todo!()
+        self.started    // ← Use the existing 'started' field
     }
 
     fn get_frame_count(&self) -> u64 {
-        todo!()
+        0  // ← Mock renderer doesn't actually render frames, so return 0
     }
 
     fn start(&mut self) -> Result<(), String> {
@@ -238,7 +240,12 @@ impl Renderer for MockRenderer {
     }
 
     fn render_frame(&mut self) -> Result<(), String> {
-        todo!()
+        if !self.started {
+            Err("MockRenderer is not started".to_string())
+        } else {
+            // Mock renderer doesn't actually render, just return success
+            Ok(())
+        }
     }
 
     fn sender(&self) -> BufferedAsyncSender<RendererEvent> {
@@ -259,11 +266,8 @@ impl Renderer for MockRenderer {
                     RendererEvent::Stopped(id) => {
                         println!("MockRenderer stopped {:?}", id);
                     }
-                    RendererEvent::Switched(active) => {
-                        println!("MockRenderer switched {:?}", active);
-                    }
-                    other => {
-                        println!("MockRenderer ignoring event {:?}", other);
+                    _ => {
+                        // Handle other events as needed
                     }
                 }
             }
