@@ -2,10 +2,35 @@
 //!
 //! This file would be placed in examples/buffered_async_sender_usage.rs
 
-use std::sync::Arc;
+use std::any::Any;
+use std::sync::{Arc};
 use std::sync::atomic::AtomicU64;
+use tokio::sync::mpsc::Receiver;
 use fulgor::renderer::prelude::*;
 use tokio::time::{sleep, Duration};
+
+/// Subscribe using BufferedAsyncSender with bounded channel.
+pub fn subscribe_buffered_bounded(
+    buffered_async_sender:&BufferedAsyncSender<RendererEvent>,
+    capacity: usize,
+    drop_oldest_on_full: bool,
+) -> Receiver<RendererEvent> {
+    let (buffered_sender, receiver) = BufferedAsyncSender::<RendererEvent>::new_bounded(
+        capacity,
+        drop_oldest_on_full,
+        Arc::new(AtomicU64::new(0)),
+    );
+    buffered_async_sender = buffered_sender;
+    receiver
+}
+
+/// Subscribe using BufferedAsyncSender with unbounded channel.
+pub fn subscribe_buffered_unbounded(buffered_async_sender:&BufferedAsyncSender<RendererEvent>) -> tokio::sync::mpsc::UnboundedReceiver<RendererEvent> {
+    let (buffered_sender, receiver) =
+        BufferedAsyncSender::<RendererEvent>::new_unbounded(Some(1));
+    buffered_async_sender = buffered_sender;
+    receiver
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -37,7 +62,8 @@ async fn bounded_channel_drop_newest_example() -> Result<(), Box<dyn std::error:
 
     // Send events that will fill the channel
     for i in 0..5 {
-        let event = RendererEvent::Started(RendererKind::CpuReference);
+        let rendererId = 1;
+        let event = RendererEvent::Started(rendererId);
         let _ = sender.send_event(event).await;
         println!("Sent event {}", i + 1);
     }
@@ -64,9 +90,9 @@ async fn bounded_channel_drop_oldest_example() -> Result<(), Box<dyn std::error:
     // Send events rapidly to test drop_oldest logic
     for i in 0..8 {
         let event = match i % 3 {
-            0 => RendererEvent::Started(RendererKind::CpuReference),
-            1 => RendererEvent::Stopped(RendererKind::CpuReference),
-            _ => RendererEvent::Switched(Some(RendererKind::CpuReference)),
+            0 => RendererEvent::Started(0),
+            1 => RendererEvent::Stopped(1),
+            _ => RendererEvent::Switched(Option::<u64>::Some(i.clone())),
         };
 
         let _ = sender.send_event(event).await;
@@ -97,7 +123,7 @@ async fn unbounded_channel_example() -> Result<(), Box<dyn std::error::Error>> {
 
     // Send many events rapidly
     for i in 0..100 {
-        let event = RendererEvent::Started(RendererKind::CpuReference);
+        let event = RendererEvent::Started(i);
         let _ = sender.send_event(event).await;
 
         if i % 20 == 0 {
@@ -120,19 +146,18 @@ async fn unbounded_channel_example() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn renderer_manager_integration_example() -> Result<(), Box<dyn std::error::Error>> {
     let manager = RendererManager::new();
-
+    let renderer = manager.create_by_name("ReferenceRendererFactory", DataPrecision::F64,"");
     // Subscribe using buffered async sender
-    let mut receiver = manager.subscribe_buffered_bounded(5, true);
+    let mut receiver = subscribe_buffered_bounded(renderer,5, true);
 
     println!("Subscribed to RendererManager with buffered async sender");
 
     // Start and stop renderers asynchronously
-    manager.add(RendererKind::CpuReference);
-    manager.start_async(RendererKind::CpuReference).await?;
+    manager.start_async(renderer.iter().by_ref().unique_id()).await?;
 
     sleep(Duration::from_millis(50)).await;
 
-    manager.stop_async(RendererKind::CpuReference).await;
+    manager.stop_async(renderer.iter().by_ref().unique_id()).await;
 
     // Check dropped events
     if let Some(buffered_sender) = manager.get_buffered_sender() {
@@ -163,8 +188,8 @@ mod integration_tests {
         let (sender, mut receiver) = BufferedAsyncSender::new_bounded(2, false,Arc::new(AtomicU64::new((0))));
 
         // Test normal sending
-        let event1 = RendererEvent::Started(RendererKind::CpuReference);
-        let event2 = RendererEvent::Stopped(RendererKind::CpuReference);
+        let event1 = RendererEvent::Started(1);
+        let event2 = RendererEvent::Stopped(1);
 
         sender.send_event(event1.clone()).await;
         sender.send_event(event2.clone()).await;
@@ -184,7 +209,7 @@ mod integration_tests {
 
         // Fill the channel beyond capacity
         for i in 0..4 {
-            let event = RendererEvent::Started(RendererKind::CpuReference);
+            let event = RendererEvent::Started(1);
             sender.send_event(event).await;
         }
 
@@ -198,7 +223,7 @@ mod integration_tests {
 
         // Send multiple events
         for i in 0..10 {
-            let event = RendererEvent::Started(RendererKind::CpuReference);
+            let event = RendererEvent::Started(1);
             sender.send_event(event).await;
         }
 
@@ -219,7 +244,7 @@ mod integration_tests {
 
         // Send more events than capacity
         for i in 0..6 {
-            let event = RendererEvent::Started(RendererKind::CpuReference);
+            let event = RendererEvent::Started(1);
             sender.send_event(event).await;
         }
 
@@ -246,7 +271,7 @@ mod benchmarks {
 
         // Send events
         for i in 0..event_count {
-            let event = RendererEvent::Started(RendererKind::CpuReference);
+            let event = RendererEvent::Started(1);
             sender.send_event(event).await;
         }
 
@@ -278,7 +303,7 @@ mod benchmarks {
 
         // Send events
         for i in 0..event_count {
-            let event = RendererEvent::Started(RendererKind::CpuReference);
+            let event = RendererEvent::Started(1);
             sender.send_event(event).await;
         }
 
