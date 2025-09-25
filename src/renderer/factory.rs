@@ -204,7 +204,7 @@ impl Renderer for MockRenderer {
         std::time::Duration::from_millis(1000) // 1 second for reference renderer
     }
 
-    fn set_data_precision(&mut self, precision: DataPrecision) -> Result<DataPrecision, String> {
+    fn set_data_precision(&mut self, _: DataPrecision) -> Result<DataPrecision, String> {
         todo!()
     }
 
@@ -963,13 +963,9 @@ mod tests {
         assert!(factory.create(DataPrecision::BFloat16, "").is_ok());
 
         // Verify the precision is preserved in created renderers
+        // Verify the precision is preserved in created renderers
         let renderer_f16 = factory.create(DataPrecision::F16, "").unwrap();
-        let any_ref = &renderer_f16.as_ref() as &dyn Any;
-        if let Some(mock) = any_ref.downcast_ref::<MockRenderer>() {
-            assert_eq!(mock.precision(), DataPrecision::F16);
-        } else {
-            panic!("Failed to downcast to MockRenderer");
-        }
+        assert_eq!(renderer_f16.get_data_precision(), DataPrecision::F16);
     }
 
     #[test]

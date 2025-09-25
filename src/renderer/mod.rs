@@ -84,7 +84,7 @@ pub enum RendererEvent {
 }
 
 /// Updated Renderer trait with unique_id method
-pub trait Renderer: Send + Debug {
+pub trait Renderer: Send + Sync + Debug {
     /// Get the unique ID for this renderer instance.
     /// This ID is generated once when the renderer is created and never changes.
     fn unique_id(&self) -> u64;
