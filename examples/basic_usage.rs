@@ -136,7 +136,12 @@ async fn await_custom_events_example() -> Result<(), Box<dyn std::error::Error>>
     }
 
     // Create a low-latency configuration with f32 precision for real-time applications
-    let config = AsyncChannelConfig::low_latency(0.001f32);
+    let config = AsyncChannelConfig::new(
+        100,  // Small buffer size for low latency
+        Some(std::time::Duration::from_millis(1)),  // 1ms timeout (0.001 seconds)
+        false,  // No backpressure - drop events when full for low latency
+        std::time::Duration::from_millis(100)  // Fast statistics collection
+    );
     println!("Using f32 precision config - Buffer: {}, Timeout: {:?}",
              config.maximum_buffer_size,
              config.timeout());
@@ -192,7 +197,7 @@ async fn await_custom_events_example() -> Result<(), Box<dyn std::error::Error>>
     }
 
     println!("Custom events received: {}", event_receiver.received_events_count());
-    println!("Configuration precision threshold: {}", event_receiver.configuration().precision());
+    println!("Configuration precision threshold: {}us", event_receiver.configuration().send_timeout.unwrap().as_micros());
     Ok(())
 }
 
