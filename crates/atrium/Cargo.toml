@@ -1,0 +1,44 @@
+[package]
+name = "atrium"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Main GUI coordinator for Fulgor IDE"
+
+[[bin]]
+name = "fulgor"
+path = "src/main.rs"
+
+[dependencies]
+# All workspace crates
+nexus.workspace = true
+forge.workspace = true
+lights.workspace = true
+agora.workspace = true
+optical.workspace = true
+
+# Workspace dependencies
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Application framework
+clap = { version = "4.0", features = ["derive"] }
+directories = "5.0"
+config = "0.13"
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[[example]]
+name = "minimal_ide"
+path = "examples/minimal_ide.rs"

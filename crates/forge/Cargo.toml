@@ -1,0 +1,30 @@
+[package]
+name = "forge"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "LLVM-based code generation for Fulgor IDE"
+
+[dependencies]
+# Workspace dependencies
+nexus.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+# LLVM specific
+inkwell = { version = "0.4", features = ["llvm15-0"] }
+llvm-sys = "150.0"
+
+# Code generation
+tempfile = "3.0"
+which = "4.0"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "codegen_performance"
+harness = false

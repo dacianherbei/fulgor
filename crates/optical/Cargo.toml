@@ -1,0 +1,41 @@
+[package]
+name = "optical"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "UI component library for Fulgor IDE"
+
+[dependencies]
+# Workspace dependencies
+lights.workspace = true
+serde.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+
+# UI and windowing
+winit = "0.29"
+wgpu = "0.18"
+
+# Layout and styling
+taffy = "0.3"
+cosmic-text = "0.9"
+
+# Math and utilities
+glam = "0.24"
+kurbo = "0.9"
+
+# Input handling
+gilrs = "0.10"
+
+[dev-dependencies]
+env_logger = "0.10"
+
+[[example]]
+name = "button_demo"
+path = "examples/button_demo.rs"
+
+[[example]]
+name = "layout_demo" 
+path = "examples/layout_demo.rs"
