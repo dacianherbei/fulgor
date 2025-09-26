@@ -354,7 +354,12 @@ impl RendererFactory for MockRendererFactory {
         )
     }
 
-    fn validate_parameters(&self, _precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
+    fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
+        // FIXED: Check precision support first!
+        if !self.supported_precisions.contains(&precision) {
+            return Err(RendererError::UnsupportedPrecision(precision));
+        }
+
         // Simple parameter validation
         if parameters.contains("invalid") {
             return Err(RendererError::InvalidParameters(
