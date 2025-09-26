@@ -1,9 +1,9 @@
+use crate::renderer::{DataPrecision, Renderer, RendererError, RendererFactory, RendererInfo};
 use std::any::TypeId;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard, mpsc};
-use std::time::Duration;
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
-use crate::renderer::{DataPrecision, RendererError, RendererFactory, RendererInfo, Renderer};
+use std::time::Duration;
 
 /// Factory registry with automatic renderer cleanup.
 ///
@@ -65,7 +65,7 @@ impl RendererManager {
         let timeout_duration = Duration::from_micros(factory_info.timeout_microseconds);
 
         // FIX: Use the factory's actual TypeId (since RendererFactory extends Any)
-        let type_id = factory.as_ref().type_id();  // ← Get actual factory TypeId from trait object
+        let type_id = factory.as_ref().type_id(); // ← Get actual factory TypeId from trait object
 
         // Implement timeout protection using a separate thread
         let factories_clone = Arc::clone(&self.factories);
@@ -87,19 +87,15 @@ impl RendererManager {
                                     factories.insert(type_id, factory_box);
                                     Ok(true)
                                 }
-                                Err(_) => {
-                                    Err(RendererError::CreationFailed(
-                                        "Failed to unwrap factory Arc for registration".to_string()
-                                    ))
-                                }
+                                Err(_) => Err(RendererError::CreationFailed(
+                                    "Failed to unwrap factory Arc for registration".to_string(),
+                                )),
                             }
                         }
                     }
-                    Err(_) => {
-                        Err(RendererError::CreationFailed(
-                            "Failed to acquire factories lock".to_string()
-                        ))
-                    }
+                    Err(_) => Err(RendererError::CreationFailed(
+                        "Failed to acquire factories lock".to_string(),
+                    )),
                 }
             };
 
@@ -108,17 +104,13 @@ impl RendererManager {
 
         match receiver.recv_timeout(timeout_duration) {
             Ok((result, _elapsed)) => result,
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                Err(RendererError::CreationFailed(format!(
-                    "Factory registration timed out after {} microseconds",
-                    timeout_duration.as_micros()
-                )))
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(RendererError::CreationFailed(
-                    "Registration thread disconnected unexpectedly".to_string()
-                ))
-            }
+            Err(mpsc::RecvTimeoutError::Timeout) => Err(RendererError::CreationFailed(format!(
+                "Factory registration timed out after {} microseconds",
+                timeout_duration.as_micros()
+            ))),
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(RendererError::CreationFailed(
+                "Registration thread disconnected unexpectedly".to_string(),
+            )),
         }
     }
 
@@ -196,11 +188,10 @@ impl RendererManager {
     /// ```
     pub fn get_renderer_info_list(&self) -> Vec<RendererInfo> {
         match self.get_factories_lock() {
-            Ok(factories) => {
-                factories.values()
-                    .map(|factory| factory.get_info())
-                    .collect()
-            }
+            Ok(factories) => factories
+                .values()
+                .map(|factory| factory.get_info())
+                .collect(),
             Err(_) => Vec::new(),
         }
     }
@@ -277,13 +268,11 @@ impl RendererManager {
     /// ```
     pub fn find_by_capability(&self, capability: &str) -> Vec<RendererInfo> {
         match self.get_factories_lock() {
-            Ok(factories) => {
-                factories
-                    .values()
-                    .map(|factory| factory.get_info())
-                    .filter(|info| info.has_capability(capability))
-                    .collect()
-            }
+            Ok(factories) => factories
+                .values()
+                .map(|factory| factory.get_info())
+                .filter(|info| info.has_capability(capability))
+                .collect(),
             Err(_) => {
                 // Return empty list if we can't acquire the lock
                 Vec::new()
@@ -345,7 +334,7 @@ impl RendererManager {
     /// Set up shutdown tracking for a renderer
     fn setup_renderer_tracking(
         &self,
-        renderer: Box<dyn Renderer>
+        renderer: Box<dyn Renderer>,
     ) -> Result<(Box<dyn Renderer>, mpsc::Receiver<()>, mpsc::Sender<()>), RendererError> {
         // Get the shutdown timeout and unique ID from the renderer
         let shutdown_timeout = renderer.shutdown_timeout();
@@ -358,7 +347,12 @@ impl RendererManager {
         let (confirm_tx, confirm_rx) = mpsc::channel();
 
         // Track this renderer for cleanup
-        self.renderer_shutdowns.lock().unwrap().push((renderer_id, shutdown_tx, confirm_rx, shutdown_timeout));
+        self.renderer_shutdowns.lock().unwrap().push((
+            renderer_id,
+            shutdown_tx,
+            confirm_rx,
+            shutdown_timeout,
+        ));
 
         Ok((renderer, shutdown_rx, confirm_tx))
     }
@@ -430,15 +424,17 @@ impl RendererManager {
             }
         }
 
-        Err(RendererError::RendererNotFoundByName(factory_name.to_string()))
+        Err(RendererError::RendererNotFoundByName(
+            factory_name.to_string(),
+        ))
     }
 
     /// Helper method to acquire the factories lock safely
-    fn get_factories_lock(&self) -> Result<MutexGuard<'_, HashMap<TypeId, Box<dyn RendererFactory>>>, RendererError> {
+    fn get_factories_lock(
+        &self,
+    ) -> Result<MutexGuard<'_, HashMap<TypeId, Box<dyn RendererFactory>>>, RendererError> {
         self.factories.lock().map_err(|_| {
-            RendererError::CreationFailed(
-                "Failed to acquire factories lock".to_string()
-            )
+            RendererError::CreationFailed("Failed to acquire factories lock".to_string())
         })
     }
     /// Find renderer factory information by name.
@@ -465,12 +461,10 @@ impl RendererManager {
     /// ```
     pub fn find_factory_by_name(&self, name: &str) -> Option<RendererInfo> {
         match self.get_factories_lock() {
-            Ok(factories) => {
-                factories
-                    .values()
-                    .map(|factory| factory.get_info())
-                    .find(|info| info.name == name)
-            }
+            Ok(factories) => factories
+                .values()
+                .map(|factory| factory.get_info())
+                .find(|info| info.name == name),
             Err(_) => None,
         }
     }
@@ -577,7 +571,10 @@ impl Drop for RendererManager {
                 confirmations.push((renderer_id, confirm_rx, timeout));
             }
 
-            println!("Sent shutdown signals to {} renderers, waiting for confirmations...", renderer_count);
+            println!(
+                "Sent shutdown signals to {} renderers, waiting for confirmations...",
+                renderer_count
+            );
 
             // Wait for confirmations with individual timeouts using std library
             let mut completed = 0;
@@ -591,8 +588,10 @@ impl Drop for RendererManager {
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         timed_out += 1;
-                        eprintln!("WARNING: Renderer {} did not confirm shutdown within {:?} timeout",
-                                  renderer_id, timeout);
+                        eprintln!(
+                            "WARNING: Renderer {} did not confirm shutdown within {:?} timeout",
+                            renderer_id, timeout
+                        );
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
                         // Channel was dropped, renderer probably stopped
@@ -602,7 +601,10 @@ impl Drop for RendererManager {
                 }
             }
 
-            println!("Renderer shutdown complete: {} confirmed, {} timed out", completed, timed_out);
+            println!(
+                "Renderer shutdown complete: {} confirmed, {} timed out",
+                completed, timed_out
+            );
         }
     }
 }
@@ -610,10 +612,82 @@ impl Drop for RendererManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::factory::{MockRendererFactory};
-    use std::thread;
+    use crate::renderer::factory::MockRendererFactory;
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::thread;
+
+    macro_rules! test_factory {
+        ($name:ident) => {
+            #[derive(Debug)]
+            struct $name(MockRendererFactory);
+            impl RendererFactory for $name {
+                fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
+                    self.0.create(precision, parameters)
+                }
+                fn get_info(&self) -> RendererInfo {
+                    self.0.get_info()
+                }
+                fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
+                    self.0.validate_parameters(precision, parameters)
+                }
+            }
+        };
+    }
+
+    // MACRO 2: Create isolated test manager with single factory
+    macro_rules! isolated_manager {
+        ($factory_type:ident, $mock_config:expr) => {{
+            test_factory!($factory_type);
+            let mut manager = RendererManager::new();
+            let factory = Box::new($factory_type($mock_config));
+            manager.register(factory).unwrap();
+            manager
+        }};
+    }
+
+    // MACRO 3: Create test manager with multiple factories (different TypeIds)
+    macro_rules! multi_factory_manager {
+        ($(($factory_type:ident, $mock_config:expr)),+ $(,)?) => {{
+            $(test_factory!($factory_type);)+
+            let mut manager = RendererManager::new();
+            $(
+                let factory = Box::new($factory_type($mock_config));
+                manager.register(factory).unwrap();
+            )+
+            manager
+        }};
+    }
+
+    // MACRO 4: Create manager with predefined common scenarios
+    macro_rules! standard_test_manager {
+        (cpu_gpu) => {{
+            multi_factory_manager!(
+                (StandardCpuFactory, MockRendererFactory::new_full(
+                    "CpuRenderer",
+                    vec![DataPrecision::F32, DataPrecision::F64],
+                    "cpu_rendering,basic_3d,software",
+                    3000,
+                )),
+                (StandardGpuFactory, MockRendererFactory::new_full(
+                    "GpuRenderer",
+                    vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::BFloat16],
+                    "gpu_rendering,advanced_3d,hardware_accelerated,real_time",
+                    5000,
+                ))
+            )
+        }};
+        (single_cpu) => {{
+            isolated_manager!(
+                StandardSingleCpuFactory,
+                MockRendererFactory::new_full(
+                    "CpuRenderer",
+                    vec![DataPrecision::F32, DataPrecision::F64],
+                    "cpu_rendering,basic_3d,software",
+                    3000,
+                )
+            )
+        }};
+    }
 
     fn create_single_test_factory_manager() -> RendererManager {
         let mut manager = RendererManager::new();
@@ -623,92 +697,6 @@ mod tests {
             "cpu_rendering,gpu_rendering,basic_3d,real_time",
             5000,
         ));
-        manager.register(factory).unwrap();
-        manager
-    }
-
-    // For tests that really need multiple factories, use this pattern with wrapper types:
-    fn create_multi_factory_manager() -> RendererManager {
-        let mut manager = RendererManager::new();
-
-        // Different wrapper types, each with unique TypeId
-        #[derive(Debug)]
-        struct CpuFactory(MockRendererFactory);
-        impl RendererFactory for CpuFactory {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        #[derive(Debug)]
-        struct GpuFactory(MockRendererFactory);
-        impl RendererFactory for GpuFactory {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        // Register different factory types
-        let cpu_factory = Box::new(CpuFactory(MockRendererFactory::new_full(
-            "CpuRenderer",
-            vec![DataPrecision::F32, DataPrecision::F64],
-            "cpu_rendering,basic_3d,software",
-            3000,
-        )));
-        manager.register(cpu_factory).unwrap();
-
-        let gpu_factory = Box::new(GpuFactory(MockRendererFactory::new_full(
-            "GpuRenderer",
-            vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::BFloat16],
-            "gpu_rendering,advanced_3d,hardware_accelerated,real_time",
-            5000,
-        )));
-        manager.register(gpu_factory).unwrap();
-
-        manager
-    }
-
-    fn debug_test_manager_factories() {
-        let manager = create_test_manager_with_factories();
-        println!("Factories in create_test_manager_with_factories():");
-        for info in manager.get_renderer_info_list() {
-            println!("- {}: capabilities='{}', timeout={}µs",
-                     info.name, info.capabilities, info.timeout_microseconds);
-            println!("  Individual capabilities: {:?}", info.get_capabilities());
-        }
-    }
-
-    // Recommendation: Create specific helper functions for different test scenarios
-    fn create_whitespace_test_manager() -> RendererManager {
-        let mut manager = RendererManager::new();
-
-        // Wrapper to avoid TypeId conflicts
-        #[derive(Debug)]
-        struct WhitespaceTestFactory(MockRendererFactory);
-        impl RendererFactory for WhitespaceTestFactory {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        let factory = Box::new(WhitespaceTestFactory(MockRendererFactory::new_full(
-            "TestRenderer",
-            vec![DataPrecision::F32],
-            "cpu_rendering,basic_3d", // Clean capabilities without extra spaces
-            3000,
-        )));
         manager.register(factory).unwrap();
         manager
     }
@@ -748,7 +736,7 @@ mod tests {
         let result = manager.register(factory2);
         assert!(result.is_err());
         match result.unwrap_err() {
-            RendererError::FactoryAlreadyRegistered(_) => {},
+            RendererError::FactoryAlreadyRegistered(_) => {}
             _ => panic!("Expected FactoryAlreadyRegistered error"),
         }
     }
@@ -763,7 +751,7 @@ mod tests {
         let renderer = manager.create(
             TypeId::of::<MockRendererFactory>(),
             DataPrecision::F32,
-            "test_params"
+            "test_params",
         );
 
         assert!(renderer.is_ok());
@@ -777,12 +765,12 @@ mod tests {
         let result = manager.create(
             TypeId::of::<String>(), // Type not registered
             DataPrecision::F32,
-            "test_params"
+            "test_params",
         );
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            RendererError::RendererNotFound(_) => {},
+            RendererError::RendererNotFound(_) => {}
             _ => panic!("Expected RendererNotFound error"),
         }
     }
@@ -797,12 +785,12 @@ mod tests {
         let result = manager.create(
             TypeId::of::<MockRendererFactory>(),
             DataPrecision::F32,
-            "invalid_params" // This should trigger validation error
+            "invalid_params", // This should trigger validation error
         );
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            RendererError::InvalidParameters(_) => {},
+            RendererError::InvalidParameters(_) => {}
             _ => panic!("Expected InvalidParameters error"),
         }
     }
@@ -812,7 +800,7 @@ mod tests {
         let mut manager = RendererManager::new();
         let factory = Box::new(MockRendererFactory::new_with_precisions(
             "TestFactory",
-            vec![DataPrecision::F32] // Only F32 supported
+            vec![DataPrecision::F32], // Only F32 supported
         ));
 
         manager.register(factory).unwrap();
@@ -820,12 +808,12 @@ mod tests {
         let result = manager.create(
             TypeId::of::<MockRendererFactory>(),
             DataPrecision::F64, // Unsupported precision
-            "test_params"
+            "test_params",
         );
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            RendererError::UnsupportedPrecision(DataPrecision::F64) => {},
+            RendererError::UnsupportedPrecision(DataPrecision::F64) => {}
             _ => panic!("Expected UnsupportedPrecision error"),
         }
     }
@@ -861,9 +849,9 @@ mod tests {
             let handle = thread::spawn(move || {
                 // Use create_by_name instead of create with TypeId to avoid TypeId mismatch issues
                 let result = manager_clone.create_by_name(
-                    "TestFactory",  // Use the factory name instead of TypeId
+                    "TestFactory", // Use the factory name instead of TypeId
                     DataPrecision::F32,
-                    "" // Use empty parameters
+                    "", // Use empty parameters
                 );
 
                 // Return both success and error for debugging
@@ -879,7 +867,11 @@ mod tests {
         for (i, handle) in handles.into_iter().enumerate() {
             let (success, error) = handle.join().unwrap();
             if !success {
-                panic!("Thread {} failed with error: {:?}", i, error.unwrap_or("Unknown error".to_string()));
+                panic!(
+                    "Thread {} failed with error: {:?}",
+                    i,
+                    error.unwrap_or("Unknown error".to_string())
+                );
             }
         }
     }
@@ -893,7 +885,7 @@ mod tests {
             "TimeoutFactory",
             vec![DataPrecision::F32],
             "timeout_test",
-            1 // 1 microsecond timeout - should be very tight
+            1, // 1 microsecond timeout - should be very tight
         ));
 
         // Registration might succeed or timeout depending on system timing
@@ -934,40 +926,6 @@ mod tests {
         assert!(debug_string.contains("RendererManager"));
     }
 
-    // Helper function to create a test manager with various factories
-    fn create_test_manager_with_factories() -> RendererManager {
-        let mut manager = RendererManager::new();
-
-        // Register a basic CPU renderer
-        let cpu_factory = Box::new(MockRendererFactory::new_full(
-            "CpuRenderer",
-            vec![DataPrecision::F32, DataPrecision::F64],
-            "cpu_rendering,basic_3d,software",
-            3000,
-        ));
-        manager.register(cpu_factory).unwrap();
-
-        // Register a GPU renderer with different capabilities
-        let gpu_factory = Box::new(MockRendererFactory::new_full(
-            "GpuRenderer",
-            vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::BFloat16],
-            "gpu_rendering,advanced_3d,hardware_accelerated,real_time",
-            5000,
-        ));
-        manager.register(gpu_factory).unwrap();
-
-        // Register a specialized high-precision renderer
-        let precision_factory = Box::new(MockRendererFactory::new_full(
-            "PrecisionRenderer",
-            vec![DataPrecision::F64],
-            "high_precision,scientific,cpu_rendering",
-            10000,
-        ));
-        manager.register(precision_factory).unwrap();
-
-        manager
-    }
-
     #[test]
     fn test_single_factory_multiple_renderers() {
         let mut manager = RendererManager::new();
@@ -982,9 +940,15 @@ mod tests {
         manager.register(factory).unwrap();
 
         // Test that same factory can create multiple renderers with different parameters
-        let renderer1 = manager.create_by_name("OpenGL3Renderer", DataPrecision::F16, "vsync=true").unwrap();
-        let renderer2 = manager.create_by_name("OpenGL3Renderer", DataPrecision::F32, "vsync=false").unwrap();
-        let renderer3 = manager.create_by_name("OpenGL3Renderer", DataPrecision::F64, "msaa=4").unwrap();
+        let renderer1 = manager
+            .create_by_name("OpenGL3Renderer", DataPrecision::F16, "vsync=true")
+            .unwrap();
+        let renderer2 = manager
+            .create_by_name("OpenGL3Renderer", DataPrecision::F32, "vsync=false")
+            .unwrap();
+        let renderer3 = manager
+            .create_by_name("OpenGL3Renderer", DataPrecision::F64, "msaa=4")
+            .unwrap();
 
         // Verify they're different instances but from same factory
         assert_ne!(renderer1.0.unique_id(), renderer2.0.unique_id());
@@ -1020,19 +984,19 @@ mod tests {
                     0 => {
                         // Test capability search
                         let _renderers = manager_clone.find_by_capability("cpu_rendering");
-                    },
+                    }
                     1 => {
                         // Test precision search
                         let _renderers = manager_clone.find_by_precision(DataPrecision::F32);
-                    },
+                    }
                     2 => {
                         // Test factory count
                         let _count = manager_clone.get_factory_count();
-                    },
+                    }
                     3 => {
                         // Test factory lookup
                         let _info = manager_clone.find_factory_by_name("TestRenderer");
-                    },
+                    }
                     _ => unreachable!(),
                 }
             });
@@ -1061,7 +1025,7 @@ mod tests {
 
         // Verify it's the right error type
         match result2.unwrap_err() {
-            RendererError::FactoryAlreadyRegistered(_) => {}, // ✅ Expected
+            RendererError::FactoryAlreadyRegistered(_) => {} // ✅ Expected
             _ => panic!("Wrong error type"),
         }
 
@@ -1086,7 +1050,7 @@ mod tests {
         match result.unwrap_err() {
             RendererError::RendererNotFoundByName(name) => {
                 assert_eq!(name, "NonExistentRenderer");
-            },
+            }
             _ => panic!("Expected RendererNotFoundByName error"),
         }
     }
@@ -1099,7 +1063,7 @@ mod tests {
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            RendererError::RendererNotFoundByName(_) => {},
+            RendererError::RendererNotFoundByName(_) => {}
             _ => panic!("Expected RendererNotFoundByName error"),
         }
     }
@@ -1111,7 +1075,7 @@ mod tests {
         let mut manager = RendererManager::new();
         let factory = Box::new(MockRendererFactory::new_with_precisions(
             "LimitedRenderer",
-            vec![DataPrecision::F32, DataPrecision::F64] // Only F32 and F64, NOT BFloat16
+            vec![DataPrecision::F32, DataPrecision::F64], // Only F32 and F64, NOT BFloat16
         ));
         manager.register(factory).unwrap();
 
@@ -1122,14 +1086,14 @@ mod tests {
         match result.unwrap_err() {
             RendererError::UnsupportedPrecision(DataPrecision::BFloat16) => {
                 // ✅ Expected error - factory correctly rejected unsupported precision
-            },
+            }
             _ => panic!("Expected UnsupportedPrecision error"),
         }
     }
 
     #[test]
-    fn test_find_by_capability_success() {
-        let manager = create_multi_factory_manager(); // Needs multiple for capability testing
+    fn test_find_by_capability_success_with_standard() {
+        let manager = standard_test_manager!(cpu_gpu);
 
         let cpu_renderers = manager.find_by_capability("cpu_rendering");
         assert_eq!(cpu_renderers.len(), 1);
@@ -1169,29 +1133,18 @@ mod tests {
         assert!(result.is_empty());
     }
 
+    // AFTER: Clean macro usage (replace existing tests with this pattern)
     #[test]
     fn test_find_by_capability_whitespace_handling() {
-        let mut manager = RendererManager::new();
-
-        #[derive(Debug)]
-        struct UniqueWhitespaceFactory(MockRendererFactory);
-        impl RendererFactory for UniqueWhitespaceFactory {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        let factory = Box::new(UniqueWhitespaceFactory(MockRendererFactory::new_full(
-            "TestRenderer",
-            vec![DataPrecision::F32],
-            "cpu_rendering,basic_3d",
-            3000,
-        )));
-        manager.register(factory).unwrap();
+        let manager = isolated_manager!(
+            WhitespaceTestFactory,
+            MockRendererFactory::new_full(
+                "TestRenderer",
+                vec![DataPrecision::F32],
+                "cpu_rendering,basic_3d",
+                3000,
+            )
+        );
 
         // Test whitespace handling - the implementation intentionally trims input for user convenience
         let result = manager.find_by_capability(" cpu_rendering ");
@@ -1207,50 +1160,20 @@ mod tests {
 
     #[test]
     fn test_find_by_precision_success() {
-        let mut manager = RendererManager::new();
-
-        // Create two factories with unique TypeIds
-        #[derive(Debug)]
-        struct CpuPrecisionFactory(MockRendererFactory);
-        impl RendererFactory for CpuPrecisionFactory {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        #[derive(Debug)]
-        struct GpuPrecisionFactory(MockRendererFactory);
-        impl RendererFactory for GpuPrecisionFactory {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        // Register CPU factory (supports F32, F64)
-        let cpu_factory = Box::new(CpuPrecisionFactory(MockRendererFactory::new_full(
-            "CpuRenderer",
-            vec![DataPrecision::F32, DataPrecision::F64],
-            "cpu_rendering,basic_3d,software",
-            3000,
-        )));
-        manager.register(cpu_factory).unwrap();
-
-        // Register GPU factory (supports F16, F32, BFloat16)
-        let gpu_factory = Box::new(GpuPrecisionFactory(MockRendererFactory::new_full(
-            "GpuRenderer",
-            vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::BFloat16],
-            "gpu_rendering,advanced_3d,hardware_accelerated,real_time",
-            5000,
-        )));
-        manager.register(gpu_factory).unwrap();
+        let manager = multi_factory_manager!(
+            (CpuPrecisionFactory, MockRendererFactory::new_full(
+                "CpuRenderer",
+                vec![DataPrecision::F32, DataPrecision::F64],
+                "cpu_rendering,basic_3d,software",
+                3000,
+            )),
+            (GpuPrecisionFactory, MockRendererFactory::new_full(
+                "GpuRenderer",
+                vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::BFloat16],
+                "gpu_rendering,advanced_3d,hardware_accelerated,real_time",
+                5000,
+            ))
+        );
 
         // Test F32 - both factories support it
         let f32_renderers = manager.find_by_precision(DataPrecision::F32);
@@ -1264,13 +1187,13 @@ mod tests {
 
     #[test]
     fn test_find_by_precision_not_found() {
-        // Create a manager with limited precision support - DON'T use shared helper
-        let mut manager = RendererManager::new();
-        let factory = Box::new(MockRendererFactory::new_with_precisions(
-            "LimitedRenderer",
-            vec![DataPrecision::F32], // Only supports F32
-        ));
-        manager.register(factory).unwrap();
+        let manager = isolated_manager!(
+            LimitedPrecisionFactory,
+            MockRendererFactory::new_with_precisions(
+                "LimitedRenderer",
+                vec![DataPrecision::F32], // Only supports F32
+            )
+        );
 
         // Search for unsupported precision
         let result = manager.find_by_precision(DataPrecision::F64);
@@ -1290,73 +1213,18 @@ mod tests {
         let manager = RendererManager::new();
         assert_eq!(manager.get_factory_count(), 0);
 
-        // Create isolated manager instead of using shared helper
-        let mut manager = RendererManager::new();
+        // Create manager with multiple factories using macro
+        let manager = multi_factory_manager!(
+            (CountFactory1, MockRendererFactory::new("CpuRenderer")),
+            (CountFactory2, MockRendererFactory::new("GpuRenderer")),
+            (CountFactory3, MockRendererFactory::new("PrecisionRenderer"))
+        );
 
-        #[derive(Debug)]
-        struct CountFactory1(MockRendererFactory);
-        impl RendererFactory for CountFactory1 {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        #[derive(Debug)]
-        struct CountFactory2(MockRendererFactory);
-        impl RendererFactory for CountFactory2 {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        #[derive(Debug)]
-        struct CountFactory3(MockRendererFactory);
-        impl RendererFactory for CountFactory3 {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        // Register first factory
-        let factory1 = Box::new(CountFactory1(MockRendererFactory::new("CpuRenderer")));
-        manager.register(factory1).unwrap();
-        assert_eq!(manager.get_factory_count(), 1);
-
-        // Register second factory
-        let factory2 = Box::new(CountFactory2(MockRendererFactory::new("GpuRenderer")));
-        manager.register(factory2).unwrap();
-        assert_eq!(manager.get_factory_count(), 2);
-
-        // Register third factory
-        let factory3 = Box::new(CountFactory3(MockRendererFactory::new("PrecisionRenderer")));
-        manager.register(factory3).unwrap();
         assert_eq!(manager.get_factory_count(), 3);
 
         // Test adding another factory
-        #[derive(Debug)]
-        struct CountFactory4(MockRendererFactory);
-        impl RendererFactory for CountFactory4 {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
+        let mut manager = manager;
+        test_factory!(CountFactory4);
         let extra_factory = Box::new(CountFactory4(MockRendererFactory::new("ExtraRenderer")));
         manager.register(extra_factory).unwrap();
         assert_eq!(manager.get_factory_count(), 4);
@@ -1372,22 +1240,10 @@ mod tests {
 
     #[test]
     fn test_validate_parameters_for_factory_not_found() {
-        let mut manager = RendererManager::new();
-
-        #[derive(Debug)]
-        struct ValidationTestFactory(MockRendererFactory);
-        impl RendererFactory for ValidationTestFactory {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        let factory = Box::new(ValidationTestFactory(MockRendererFactory::new("TestRenderer")));
-        manager.register(factory).unwrap();
+        let manager = isolated_manager!(
+            ValidationTestFactory,
+            MockRendererFactory::new("TestRenderer")
+        );
 
         let result = manager.validate_parameters_for("NonExistentRenderer", DataPrecision::F32, "test");
         assert!(result.is_err());
@@ -1402,28 +1258,15 @@ mod tests {
 
     #[test]
     fn test_validate_parameters_for_unsupported_precision() {
-        let mut manager = RendererManager::new();
-
-        #[derive(Debug)]
-        struct PrecisionValidationFactory(MockRendererFactory);
-        impl RendererFactory for PrecisionValidationFactory {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        // Create factory that only supports F32 and F64, NOT BFloat16
-        let factory = Box::new(PrecisionValidationFactory(MockRendererFactory::new_full(
-            "CpuRenderer",
-            vec![DataPrecision::F32, DataPrecision::F64], // No BFloat16
-            "cpu_rendering,basic_3d,software",
-            3000,
-        )));
-        manager.register(factory).unwrap();
+        let manager = isolated_manager!(
+            PrecisionValidationFactory,
+            MockRendererFactory::new_full(
+                "CpuRenderer",
+                vec![DataPrecision::F32, DataPrecision::F64], // No BFloat16
+                "cpu_rendering,basic_3d,software",
+                3000,
+            )
+        );
 
         // Try to validate with unsupported BFloat16 precision
         let result = manager.validate_parameters_for("CpuRenderer", DataPrecision::BFloat16, "test");
@@ -1437,22 +1280,10 @@ mod tests {
 
     #[test]
     fn test_validate_parameters_for_invalid_parameters() {
-        let mut manager = RendererManager::new();
-
-        #[derive(Debug)]
-        struct InvalidParamsFactory(MockRendererFactory);
-        impl RendererFactory for InvalidParamsFactory {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        let factory = Box::new(InvalidParamsFactory(MockRendererFactory::new("CpuRenderer")));
-        manager.register(factory).unwrap();
+        let manager = isolated_manager!(
+            InvalidParamsFactory,
+            MockRendererFactory::new("CpuRenderer")
+        );
 
         // Use parameters that the mock factory will reject
         let result = manager.validate_parameters_for("CpuRenderer", DataPrecision::F32, "invalid_params");
@@ -1492,7 +1323,7 @@ mod tests {
 
     #[test]
     fn test_get_all_capabilities() {
-        let manager = create_multi_factory_manager(); // Needs multiple for capability aggregation
+        let manager = standard_test_manager!(cpu_gpu);
 
         let capabilities = manager.get_all_capabilities();
         let expected_caps = vec![
@@ -1516,50 +1347,20 @@ mod tests {
 
     #[test]
     fn test_get_all_capabilities_deduplication() {
-        // Create a fresh manager to avoid registration conflicts
-        let mut manager = RendererManager::new();
-
-        // Create wrapper types to have different TypeIds
-        #[derive(Debug)]
-        struct TestFactory1(MockRendererFactory);
-        impl RendererFactory for TestFactory1 {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        #[derive(Debug)]
-        struct TestFactory2(MockRendererFactory);
-        impl RendererFactory for TestFactory2 {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        // Register two factories with overlapping capabilities
-        let factory1 = Box::new(TestFactory1(MockRendererFactory::new_full(
-            "Renderer1",
-            vec![DataPrecision::F32],
-            "capability1,capability2,shared",
-            1000,
-        )));
-        manager.register(factory1).unwrap();
-
-        let factory2 = Box::new(TestFactory2(MockRendererFactory::new_full(
-            "Renderer2",
-            vec![DataPrecision::F32],
-            "capability2,capability3,shared",
-            1000,
-        )));
-        manager.register(factory2).unwrap();
+        let manager = multi_factory_manager!(
+            (TestFactory1, MockRendererFactory::new_full(
+                "Renderer1",
+                vec![DataPrecision::F32],
+                "capability1,capability2,shared",
+                1000,
+            )),
+            (TestFactory2, MockRendererFactory::new_full(
+                "Renderer2",
+                vec![DataPrecision::F32],
+                "capability2,capability3,shared",
+                1000,
+            ))
+        );
 
         let capabilities = manager.get_all_capabilities();
         assert_eq!(capabilities.len(), 4); // capability1, capability2, capability3, shared
@@ -1572,71 +1373,38 @@ mod tests {
     }
 
     #[test]
+    fn test_example_with_standard_manager() {
+        let manager = standard_test_manager!(cpu_gpu);
+
+        let cpu_renderers = manager.find_by_capability("cpu_rendering");
+        assert_eq!(cpu_renderers.len(), 1);
+
+        let gpu_renderers = manager.find_by_capability("gpu_rendering");
+        assert_eq!(gpu_renderers.len(), 1);
+    }
+
+    #[test]
     fn test_get_supported_precisions() {
-        let mut manager = RendererManager::new();
-
-        #[derive(Debug)]
-        struct PrecisionTestFactory1(MockRendererFactory);
-        impl RendererFactory for PrecisionTestFactory1 {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        #[derive(Debug)]
-        struct PrecisionTestFactory2(MockRendererFactory);
-        impl RendererFactory for PrecisionTestFactory2 {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        #[derive(Debug)]
-        struct PrecisionTestFactory3(MockRendererFactory);
-        impl RendererFactory for PrecisionTestFactory3 {
-            fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                self.0.create(precision, parameters)
-            }
-            fn get_info(&self) -> RendererInfo { self.0.get_info() }
-            fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                self.0.validate_parameters(precision, parameters)
-            }
-        }
-
-        // Register CPU renderer (supports F32, F64)
-        let cpu_factory = Box::new(PrecisionTestFactory1(MockRendererFactory::new_full(
-            "CpuRenderer",
-            vec![DataPrecision::F32, DataPrecision::F64],
-            "cpu_rendering,basic_3d,software",
-            3000,
-        )));
-        manager.register(cpu_factory).unwrap();
-
-        // Register GPU renderer (supports F16, F32, BFloat16)
-        let gpu_factory = Box::new(PrecisionTestFactory2(MockRendererFactory::new_full(
-            "GpuRenderer",
-            vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::BFloat16],
-            "gpu_rendering,advanced_3d,hardware_accelerated,real_time",
-            5000,
-        )));
-        manager.register(gpu_factory).unwrap();
-
-        // Register precision renderer (supports F64)
-        let precision_factory = Box::new(PrecisionTestFactory3(MockRendererFactory::new_full(
-            "PrecisionRenderer",
-            vec![DataPrecision::F64],
-            "high_precision,scientific,cpu_rendering",
-            10000,
-        )));
-        manager.register(precision_factory).unwrap();
+        let manager = multi_factory_manager!(
+            (PrecisionTestFactory1, MockRendererFactory::new_full(
+                "CpuRenderer",
+                vec![DataPrecision::F32, DataPrecision::F64],
+                "cpu_rendering,basic_3d,software",
+                3000,
+            )),
+            (PrecisionTestFactory2, MockRendererFactory::new_full(
+                "GpuRenderer",
+                vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::BFloat16],
+                "gpu_rendering,advanced_3d,hardware_accelerated,real_time",
+                5000,
+            )),
+            (PrecisionTestFactory3, MockRendererFactory::new_full(
+                "PrecisionRenderer",
+                vec![DataPrecision::F64],
+                "high_precision,scientific,cpu_rendering",
+                10000,
+            ))
+        );
 
         let precisions = manager.get_supported_precisions();
 
@@ -1684,7 +1452,7 @@ mod tests {
         // Create manager with single factory (following design concept)
         let mut manager = RendererManager::new();
         let factory = Box::new(MockRendererFactory::new_full(
-            "CpuRenderer",  // Keep original name that test expects
+            "CpuRenderer", // Keep original name that test expects
             vec![DataPrecision::F16, DataPrecision::F32, DataPrecision::F64],
             "cpu_rendering,gpu_rendering,real_time,basic_3d",
             5000,
@@ -1702,16 +1470,17 @@ mod tests {
                 match i % 4 {
                     0 => {
                         let _renderers = manager_clone.find_by_capability("cpu_rendering");
-                    },
+                    }
                     1 => {
                         let _renderers = manager_clone.find_by_precision(DataPrecision::F32);
-                    },
+                    }
                     2 => {
                         let _count = manager_clone.get_factory_count();
-                    },
+                    }
                     3 => {
-                        let _info = manager_clone.find_factory_by_name("CpuRenderer");  // Matches factory name
-                    },
+                        let _info = manager_clone.find_factory_by_name("CpuRenderer");
+                        // Matches factory name
+                    }
                     _ => unreachable!(),
                 }
             });
@@ -1755,7 +1524,8 @@ mod tests {
         manager.register(factory).unwrap();
 
         // Test that parameter validation errors are properly propagated
-        let result = manager.validate_parameters_for("TestRenderer", DataPrecision::F32, "invalid_params");
+        let result =
+            manager.validate_parameters_for("TestRenderer", DataPrecision::F32, "invalid_params");
         assert!(result.is_err());
 
         // Test that creation errors are properly propagated through create_by_name
@@ -1766,7 +1536,7 @@ mod tests {
             RendererError::InvalidParameters(_) => {
                 // ✅ Success! The InvalidParameters error from the factory
                 // was properly propagated through the manager to the caller
-            },
+            }
             _ => panic!("Expected InvalidParameters error to be propagated"),
         }
     }
@@ -1804,24 +1574,35 @@ mod tests {
 
         // Create a macro to generate unique factory types
         macro_rules! create_factory_type {
-        ($name:ident, $index:expr) => {
-            #[derive(Debug)]
-            struct $name(MockRendererFactory);
-            impl RendererFactory for $name {
-                fn create(&self, precision: DataPrecision, parameters: &str) -> Result<Box<dyn Renderer>, RendererError> {
-                    self.0.create(precision, parameters)
+            ($name:ident, $index:expr) => {
+                #[derive(Debug)]
+                struct $name(MockRendererFactory);
+                impl RendererFactory for $name {
+                    fn create(
+                        &self,
+                        precision: DataPrecision,
+                        parameters: &str,
+                    ) -> Result<Box<dyn Renderer>, RendererError> {
+                        self.0.create(precision, parameters)
+                    }
+                    fn get_info(&self) -> RendererInfo {
+                        self.0.get_info()
+                    }
+                    fn validate_parameters(
+                        &self,
+                        precision: DataPrecision,
+                        parameters: &str,
+                    ) -> Result<(), RendererError> {
+                        self.0.validate_parameters(precision, parameters)
+                    }
                 }
-                fn get_info(&self) -> RendererInfo { self.0.get_info() }
-                fn validate_parameters(&self, precision: DataPrecision, parameters: &str) -> Result<(), RendererError> {
-                    self.0.validate_parameters(precision, parameters)
-                }
-            }
-        };
-    }
+            };
+        }
 
         // Register many factories with unique types (reduced number for practicality)
         // In a real scenario, you'd have different renderer types, not many of the same type
-        for i in 0..10 { // Reduced from 100 for test efficiency
+        for i in 0..10 {
+            // Reduced from 100 for test efficiency
             match i {
                 0 => {
                     create_factory_type!(PerfFactory0, 0);
@@ -1832,7 +1613,7 @@ mod tests {
                         1000,
                     )));
                     manager.register(factory).unwrap();
-                },
+                }
                 1 => {
                     create_factory_type!(PerfFactory1, 1);
                     let factory = Box::new(PerfFactory1(MockRendererFactory::new_full(
@@ -1842,7 +1623,7 @@ mod tests {
                         1000,
                     )));
                     manager.register(factory).unwrap();
-                },
+                }
                 // Add more cases as needed, or just test with fewer factories
                 _ => {
                     // For remaining factories, use a different approach or skip
