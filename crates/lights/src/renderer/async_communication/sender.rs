@@ -267,8 +267,8 @@ where
     ///
     /// # Example
     /// ```rust
-    /// # use fulgor::renderer::async_communication::sender::BufferedAsyncSender;
-    /// # use fulgor::renderer::RendererEvent;
+    /// # use lights::renderer::async_communication::sender::BufferedAsyncSender;
+    /// # use lights::renderer::RendererEvent;
     /// # #[tokio::main]
     /// # async fn main() {
     /// let (sender, _rx) = BufferedAsyncSender::<RendererEvent>::new_unbounded(None);

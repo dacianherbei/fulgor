@@ -29,8 +29,8 @@ use super::async_channel::AsyncChannelConfig;
 /// # Examples
 ///
 /// ```rust
-/// use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-/// use fulgor::renderer::RendererEvent;
+/// use lights::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
+/// use lights::renderer::RendererEvent;
 /// use futures::StreamExt;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -95,8 +95,8 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-    /// # use fulgor::renderer::RendererEvent;
+    /// # use lights::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
+    /// # use lights::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let config = AsyncChannelConfig::bounded(100);
     /// let (sender, receiver) = async_channel::bounded::<RendererEvent>(100);
@@ -129,8 +129,8 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-    /// # use fulgor::renderer::RendererEvent;
+    /// # use lights::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
+    /// # use lights::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
@@ -175,8 +175,8 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-    /// # use fulgor::renderer::RendererEvent;
+    /// # use lights::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
+    /// # use lights::renderer::RendererEvent;
     /// # use async_channel::TryRecvError;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = AsyncChannelConfig::default();
@@ -221,8 +221,8 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-    /// # use fulgor::renderer::RendererEvent;
+    /// # use lights::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
+    /// # use lights::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
@@ -248,8 +248,8 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-    /// # use fulgor::renderer::RendererEvent;
+    /// # use lights::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
+    /// # use lights::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
@@ -277,8 +277,8 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-    /// # use fulgor::renderer::RendererEvent;
+    /// # use lights::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
+    /// # use lights::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
@@ -307,8 +307,8 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-    /// # use fulgor::renderer::RendererEvent;
+    /// # use lights::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
+    /// # use lights::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();
@@ -334,8 +334,8 @@ where
     /// # Examples
     ///
     /// ```rust
-    /// # use fulgor::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
-    /// # use fulgor::renderer::RendererEvent;
+    /// # use lights::renderer::async_communication::{AsyncEventReceiver, AsyncChannelConfig};
+    /// # use lights::renderer::RendererEvent;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let config = AsyncChannelConfig::default();
     /// # let (sender, receiver) = async_channel::unbounded::<RendererEvent>();

@@ -133,8 +133,8 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
-    /// use fulgor::renderer::factory::MockRendererFactory;
+    /// use lights::renderer::manager::RendererManager;
+    /// use lights::renderer::factory::MockRendererFactory;
     ///
     /// let mut manager = RendererManager::new();
     /// let factory = Box::new(MockRendererFactory::new("TestFactory"));
@@ -213,9 +213,9 @@ impl RendererManager {
     /// # Example
     /// ```
     /// use std::any::TypeId;
-    /// use fulgor::renderer::manager::RendererManager;
-    /// use fulgor::renderer::factory::MockRendererFactory;
-    /// use fulgor::renderer::DataPrecision;
+    /// use lights::renderer::manager::RendererManager;
+    /// use lights::renderer::factory::MockRendererFactory;
+    /// use lights::renderer::DataPrecision;
     ///
     /// let mut manager = RendererManager::new();
     /// let factory = Box::new(MockRendererFactory::new("TestFactory"));
@@ -256,8 +256,8 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
-    /// use fulgor::renderer::factory::MockRendererFactory;
+    /// use lights::renderer::manager::RendererManager;
+    /// use lights::renderer::factory::MockRendererFactory;
     ///
     /// let mut manager = RendererManager::new();
     /// let factory = Box::new(MockRendererFactory::new("TestFactory"));
@@ -295,8 +295,8 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
-    /// use fulgor::renderer::DataPrecision;
+    /// use lights::renderer::manager::RendererManager;
+    /// use lights::renderer::DataPrecision;
     ///
     /// let manager = RendererManager::new();
     /// let renderer = manager.create_by_name(
@@ -339,7 +339,7 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
+    /// use lights::renderer::manager::RendererManager;
     ///
     /// let manager = RendererManager::new();
     /// let gpu_renderers = manager.find_by_capability("gpu_accelerated");
@@ -376,8 +376,8 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
-    /// use fulgor::renderer::DataPrecision;
+    /// use lights::renderer::manager::RendererManager;
+    /// use lights::renderer::DataPrecision;
     ///
     /// let manager = RendererManager::new();
     /// let f64_renderers = manager.find_by_precision(DataPrecision::F64);
@@ -448,7 +448,7 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
+    /// use lights::renderer::manager::RendererManager;
     ///
     /// let manager = RendererManager::new();
     /// println!("Registered factories: {}", manager.get_factory_count());
@@ -482,8 +482,8 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
-    /// use fulgor::renderer::DataPrecision;
+    /// use lights::renderer::manager::RendererManager;
+    /// use lights::renderer::DataPrecision;
     ///
     /// let manager = RendererManager::new();
     /// match manager.validate_parameters_for("MockRenderer", DataPrecision::F32, "test=true") {
@@ -532,7 +532,7 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
+    /// use lights::renderer::manager::RendererManager;
     ///
     /// let manager = RendererManager::new();
     /// if let Some(info) = manager.find_factory_by_name("MockRenderer") {
@@ -560,7 +560,7 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
+    /// use lights::renderer::manager::RendererManager;
     ///
     /// let manager = RendererManager::new();
     /// let all_capabilities = manager.get_all_capabilities();
@@ -596,7 +596,7 @@ impl RendererManager {
     ///
     /// # Example
     /// ```
-    /// use fulgor::renderer::manager::RendererManager;
+    /// use lights::renderer::manager::RendererManager;
     ///
     /// let manager = RendererManager::new();
     /// let supported_precisions = manager.get_supported_precisions();
