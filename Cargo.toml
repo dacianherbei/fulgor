@@ -1,43 +1,37 @@
-[package]
-name = "fulgor"
+[workspace]
+members = [
+    "crates/nexus",
+    "crates/forge", 
+    "crates/lights",
+    "crates/agora",
+    "crates/optical",
+    "crates/atrium"
+]
+
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
-description = "A modular 3D rendering engine centered around Gaussian splatting primitives."
+authors = ["Dacian Herbei <dacian.herbei@gmail.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/yourusername/fulgor"
+repository = "https://github.com/your-org/fulgor"
+homepage = "https://fulgor.dev"
 
-[lib]
-name = "fulgor"
-path = "src/lib.rs"
+[workspace.dependencies]
+# Shared dependencies across workspace
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
 
-[dependencies]
-serde = { version = "1.0.225", features = ["derive"] }
-bincode = "2.0.1"
-image = "0.25.8"
-tokio = { version = "1.47.1", features = ["full"], optional = true }
-
-# wgpu optional; enabled when the "gpu" feature is selected.
-wgpu = { version = "26.0.1", optional = true }
-futures = "0.3.31"
-async-channel = "2.5.0"
-num_cpus = "1.17.0"
-
-[features]
-# "gpu" feature enables wgpu
-gpu = ["wgpu"]
-default = ["tokio-support"]
-async = ["tokio"]
-tokio-runtime = ["tokio"]
-tokio-timeout = ["tokio"]
-tokio-support = ["tokio"]
-
-[dev-dependencies]
-tokio = { version = "1.47.1", features = ["full"] }
-tokio-test = "0.4"
-
-[[example]]
-name = "async_channel_usage"
-required-features = ["async"]
-
-[[example]]
-name = "basic_usage"
+# Internal crate dependencies
+nexus = { path = "crates/nexus" }
+forge = { path = "crates/forge" }
+lights = { path = "crates/lights" }
+agora = { path = "crates/agora" }
+optical = { path = "crates/optical" }
+atrium = { path = "crates/atrium" }
