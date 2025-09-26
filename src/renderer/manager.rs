@@ -1,9 +1,84 @@
-use crate::renderer::{DataPrecision, Renderer, RendererError, RendererFactory, RendererInfo};
+use crate::renderer::{DataPrecision, PerformancePriority, Renderer, RendererError, RendererFactory, RendererInfo, RendererRequirements};
 use std::any::TypeId;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+
+/// Detailed precision capabilities for a specific factory
+#[derive(Debug, Clone)]
+pub struct FactoryPrecisionInfo {
+    pub factory_name: String,
+    pub factory_id: TypeId,
+    pub supported_precisions: Vec<DataPrecision>,
+    pub preferred_precision: Option<DataPrecision>,
+    pub precision_performance: HashMap<DataPrecision, PrecisionPerformance>,
+}
+
+/// Performance characteristics for a specific precision
+#[derive(Debug, Clone)]
+pub struct PrecisionPerformance {
+    pub relative_speed: f32,        // 1.0 = baseline, >1.0 = faster, <1.0 = slower
+    pub memory_usage_factor: f32,   // 1.0 = baseline memory usage
+    pub quality_score: f32,         // 0.0-1.0, higher = better quality
+}
+
+/// Overall precision matrix showing which factories support which precisions
+#[derive(Debug, Clone)]
+pub struct PrecisionMatrix {
+    pub precisions: Vec<DataPrecision>,
+    pub factories: Vec<FactoryPrecisionInfo>,
+    pub coverage_map: HashMap<DataPrecision, Vec<String>>, // Precision -> Factory names
+}
+
+/// Health status of a factory
+#[derive(Debug, Clone, PartialEq)]
+pub enum FactoryHealth {
+    Healthy,
+    Degraded { reason: String },
+    Unhealthy { reason: String },
+    Unknown, // Haven't checked yet or check failed
+}
+
+/// Detailed health information for a factory
+#[derive(Debug, Clone)]
+pub struct FactoryHealthInfo {
+    pub factory_name: String,
+    pub factory_id: TypeId,
+    pub health_status: FactoryHealth,
+    pub last_check_time: Option<Instant>,
+    pub response_time: Option<Duration>,
+    pub success_rate: f32, // 0.0-1.0 over recent operations
+    pub error_count: u64,
+    pub last_error: Option<String>,
+}
+
+/// Aggregated metrics for a factory
+#[derive(Debug, Clone)]
+pub struct FactoryMetrics {
+    pub factory_name: String,
+    pub factory_id: TypeId,
+    pub total_creations: u64,
+    pub successful_creations: u64,
+    pub failed_creations: u64,
+    pub average_creation_time: Duration,
+    pub fastest_creation_time: Duration,
+    pub slowest_creation_time: Duration,
+    pub preferred_precisions: Vec<DataPrecision>, // Most commonly used
+}
+
+/// System-wide renderer health report
+#[derive(Debug, Clone)]
+pub struct SystemHealthReport {
+    pub total_factories: usize,
+    pub healthy_factories: usize,
+    pub degraded_factories: usize,
+    pub unhealthy_factories: usize,
+    pub overall_health: FactoryHealth,
+    pub factory_details: Vec<FactoryHealthInfo>,
+    pub recommended_actions: Vec<String>,
+}
 
 /// Factory registry with automatic renderer cleanup.
 ///
@@ -25,6 +100,9 @@ pub struct RendererManager {
     /// Shutdown channels for all created renderers - used for cleanup
     /// Each entry contains: (renderer_id, shutdown_sender, confirmation_receiver, timeout_duration)
     renderer_shutdowns: Mutex<Vec<(u64, mpsc::Sender<()>, mpsc::Receiver<()>, Duration)>>,
+    factory_health: Arc<Mutex<HashMap<TypeId, FactoryHealthInfo>>>,
+    factory_metrics: Arc<Mutex<HashMap<TypeId, FactoryMetrics>>>,
+    last_health_check: Arc<Mutex<Option<Instant>>>
 }
 
 impl RendererManager {
@@ -32,6 +110,9 @@ impl RendererManager {
         Self {
             factories: Arc::new(Mutex::new(HashMap::new())),
             renderer_shutdowns: Mutex::new(Vec::new()),
+            factory_health: Arc::new(Mutex::new(Default::default())),
+            factory_metrics: Arc::new(Mutex::new(Default::default())),
+            last_health_check: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -540,6 +621,372 @@ impl RendererManager {
         }
 
         supported_set.into_iter().collect()
+    }
+
+    /// Get a detailed precision matrix showing which factories support which precisions
+    pub fn get_precision_matrix(&self) -> PrecisionMatrix {
+        match self.get_factories_lock() {
+            Ok(factories) => {
+                let mut all_precisions = BTreeSet::new();
+                let mut factory_infos = Vec::new();
+                let mut coverage_map: HashMap<DataPrecision, Vec<String>> = HashMap::new();
+
+                for (type_id, factory) in factories.iter() {
+                    let info = factory.get_info();
+                    let supported = self.get_factory_supported_precisions(*type_id);
+
+                    // Add precisions to the global set
+                    for precision in &supported {
+                        all_precisions.insert(*precision);
+                        coverage_map.entry(*precision)
+                            .or_insert_with(Vec::new)
+                            .push(info.name.clone());
+                    }
+
+                    // Create factory precision info
+                    let precision_info = FactoryPrecisionInfo {
+                        factory_name: info.name.clone(),
+                        factory_id: *type_id,
+                        supported_precisions: supported,
+                        preferred_precision: self.get_factory_preferred_precision(*type_id),
+                        precision_performance: self.get_factory_precision_performance(*type_id),
+                    };
+
+                    factory_infos.push(precision_info);
+                }
+
+                PrecisionMatrix {
+                    precisions: all_precisions.into_iter().collect(),
+                    factories: factory_infos,
+                    coverage_map,
+                }
+            }
+            Err(_) => PrecisionMatrix {
+                precisions: vec![],
+                factories: vec![],
+                coverage_map: HashMap::new(),
+            }
+        }
+    }
+
+    /// Get supported precisions for a specific factory
+    pub fn get_factory_supported_precisions(&self, factory_id: TypeId) -> Vec<DataPrecision> {
+        let test_precisions = [
+            DataPrecision::F16,
+            DataPrecision::F32,
+            DataPrecision::F64,
+            DataPrecision::BFloat16,
+        ];
+
+        let mut supported = Vec::new();
+
+        if let Ok(factories) = self.get_factories_lock() {
+            if let Some(factory) = factories.get(&factory_id) {
+                for precision in &test_precisions {
+                    // Test precision support by attempting validation
+                    if factory.validate_parameters(*precision, "").is_ok() {
+                        supported.push(*precision);
+                    }
+                }
+            }
+        }
+
+        supported
+    }
+
+    /// Get the preferred precision for a factory (heuristic-based)
+    pub fn get_factory_preferred_precision(&self, factory_id: TypeId) -> Option<DataPrecision> {
+        let supported = self.get_factory_supported_precisions(factory_id);
+
+        // Heuristic: prefer F32 if available, otherwise the first supported precision
+        if supported.contains(&DataPrecision::F32) {
+            Some(DataPrecision::F32)
+        } else {
+            supported.first().copied()
+        }
+    }
+
+    /// Get performance characteristics for each precision (placeholder implementation)
+    fn get_factory_precision_performance(&self, _factory_id: TypeId) -> HashMap<DataPrecision, PrecisionPerformance> {
+        // TODO: This could be enhanced to actually benchmark or use stored metrics
+        let mut performance = HashMap::new();
+
+        // Default performance characteristics (can be customized per factory)
+        performance.insert(DataPrecision::F16, PrecisionPerformance {
+            relative_speed: 1.8,
+            memory_usage_factor: 0.5,
+            quality_score: 0.85,
+        });
+
+        performance.insert(DataPrecision::F32, PrecisionPerformance {
+            relative_speed: 1.0, // Baseline
+            memory_usage_factor: 1.0,
+            quality_score: 0.95,
+        });
+
+        performance.insert(DataPrecision::F64, PrecisionPerformance {
+            relative_speed: 0.6,
+            memory_usage_factor: 2.0,
+            quality_score: 1.0,
+        });
+
+        performance.insert(DataPrecision::BFloat16, PrecisionPerformance {
+            relative_speed: 1.4,
+            memory_usage_factor: 0.5,
+            quality_score: 0.8,
+        });
+
+        performance
+    }
+
+    /// Find the best factory for given requirements
+    pub fn find_best_factory(&self, requirements: &RendererRequirements) -> Option<RendererInfo> {
+        let matrix = self.get_precision_matrix();
+        let mut best_factory: Option<&FactoryPrecisionInfo> = None;
+        let mut best_score = 0.0f32;
+
+        for factory_info in &matrix.factories {
+            let mut score = 0.0f32;
+
+            // Check required capabilities
+            let factory_caps: BTreeSet<String> = match self.get_factories_lock() {
+                Ok(factories) => {
+                    if let Some(factory) = factories.get(&factory_info.factory_id) {
+                        factory.get_info().get_capabilities()
+                            .iter().map(|s| s.to_string()).collect()
+                    } else {
+                        continue;
+                    }
+                }
+                Err(_) => continue,
+            };
+
+            // Must have all required capabilities
+            let required_caps: BTreeSet<String> = requirements.required_capabilities.iter().cloned().collect();
+            if !required_caps.is_subset(&factory_caps) {
+                continue; // Skip if missing required capabilities
+            }
+
+            score += 100.0; // Base score for meeting requirements
+
+            // Precision preference scoring
+            if factory_info.supported_precisions.contains(&requirements.preferred_precision) {
+                score += 50.0;
+
+                // Add performance-based scoring
+                if let Some(perf) = factory_info.precision_performance.get(&requirements.preferred_precision) {
+                    match requirements.performance_priority {
+                        PerformancePriority::Speed => score += perf.relative_speed * 20.0,
+                        PerformancePriority::Quality => score += perf.quality_score * 30.0,
+                        PerformancePriority::Memory => score += (2.0 - perf.memory_usage_factor) * 15.0,
+                        PerformancePriority::Balanced => {
+                            score += (perf.relative_speed + perf.quality_score + (2.0 - perf.memory_usage_factor)) * 10.0;
+                        }
+                    }
+                }
+            }
+
+            // Timeout preference
+            if let Ok(factories) = self.get_factories_lock() {
+                if let Some(factory) = factories.get(&factory_info.factory_id) {
+                    let factory_timeout = Duration::from_micros(factory.get_info().timeout_microseconds);
+                    if factory_timeout <= requirements.max_timeout {
+                        score += 20.0;
+                    }
+                }
+            }
+
+            if score > best_score {
+                best_score = score;
+                best_factory = Some(factory_info);
+            }
+        }
+
+        // Convert to RendererInfo
+        if let Some(factory_info) = best_factory {
+            if let Ok(factories) = self.get_factories_lock() {
+                if let Some(factory) = factories.get(&factory_info.factory_id) {
+                    return Some(factory.get_info());
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Perform health checks on all registered factories
+    pub fn health_check(&self) -> SystemHealthReport {
+        match self.get_factories_lock() {
+            Ok(factories) => {
+                let mut factory_details = Vec::new();
+                let mut healthy_count = 0;
+                let mut degraded_count = 0;
+                let mut unhealthy_count = 0;
+
+                for (type_id, factory) in factories.iter() {
+                    let health_info = self.check_factory_health(*type_id, factory.as_ref());
+
+                    match health_info.health_status {
+                        FactoryHealth::Healthy => healthy_count += 1,
+                        FactoryHealth::Degraded { .. } => degraded_count += 1,
+                        FactoryHealth::Unhealthy { .. } => unhealthy_count += 1,
+                        FactoryHealth::Unknown => {},
+                    }
+
+                    factory_details.push(health_info);
+                }
+
+                let total_factories = factories.len();
+                let overall_health = if unhealthy_count > 0 {
+                    FactoryHealth::Unhealthy {
+                        reason: format!("{} factories are unhealthy", unhealthy_count)
+                    }
+                } else if degraded_count > 0 {
+                    FactoryHealth::Degraded {
+                        reason: format!("{} factories are degraded", degraded_count)
+                    }
+                } else if healthy_count > 0 {
+                    FactoryHealth::Healthy
+                } else {
+                    FactoryHealth::Unknown
+                };
+
+                let recommended_actions = self.generate_health_recommendations(&factory_details);
+
+                SystemHealthReport {
+                    total_factories,
+                    healthy_factories: healthy_count,
+                    degraded_factories: degraded_count,
+                    unhealthy_factories: unhealthy_count,
+                    overall_health,
+                    factory_details,
+                    recommended_actions,
+                }
+            }
+            Err(_) => SystemHealthReport {
+                total_factories: 0,
+                healthy_factories: 0,
+                degraded_factories: 0,
+                unhealthy_factories: 0,
+                overall_health: FactoryHealth::Unknown,
+                factory_details: vec![],
+                recommended_actions: vec!["Unable to acquire factory lock".to_string()],
+            }
+        }
+    }
+
+    /// Check health of a specific factory
+    fn check_factory_health(&self, factory_id: TypeId, factory: &dyn RendererFactory) -> FactoryHealthInfo {
+        let factory_name = factory.get_info().name.clone();
+        let start_time = Instant::now();
+
+        // Test basic functionality
+        let health_status = match self.perform_factory_health_test(factory) {
+            Ok(()) => FactoryHealth::Healthy,
+            Err(e) => {
+                if e.contains("timeout") || e.contains("slow") {
+                    FactoryHealth::Degraded { reason: e }
+                } else {
+                    FactoryHealth::Unhealthy { reason: e }
+                }
+            }
+        };
+
+        let response_time = start_time.elapsed();
+
+        FactoryHealthInfo {
+            factory_name,
+            factory_id,
+            health_status,
+            last_check_time: Some(Instant::now()),
+            response_time: Some(response_time),
+            success_rate: 1.0, // TODO: Track over time
+            error_count: 0,     // TODO: Track over time
+            last_error: None,   // TODO: Track over time
+        }
+    }
+
+    /// Perform basic health test on a factory
+    fn perform_factory_health_test(&self, factory: &dyn RendererFactory) -> Result<(), String> {
+        // Test 1: Basic info retrieval
+        let _info = factory.get_info();
+
+        // Test 2: Parameter validation with empty params
+        factory.validate_parameters(DataPrecision::F32, "")
+            .map_err(|e| format!("Validation test failed: {:?}", e))?;
+
+        // Test 3: Check response time
+        let start = Instant::now();
+        let _info2 = factory.get_info();
+        let elapsed = start.elapsed();
+
+        if elapsed > Duration::from_millis(100) {
+            return Err(format!("Slow response: {:?}", elapsed));
+        }
+
+        Ok(())
+    }
+
+    /// Generate health recommendations based on factory status
+    fn generate_health_recommendations(&self, factory_details: &[FactoryHealthInfo]) -> Vec<String> {
+        let mut recommendations = Vec::new();
+
+        let unhealthy_count = factory_details.iter()
+            .filter(|f| matches!(f.health_status, FactoryHealth::Unhealthy { .. }))
+            .count();
+
+        let degraded_count = factory_details.iter()
+            .filter(|f| matches!(f.health_status, FactoryHealth::Degraded { .. }))
+            .count();
+
+        if unhealthy_count > 0 {
+            recommendations.push(format!(
+                "Consider removing or restarting {} unhealthy factories",
+                unhealthy_count
+            ));
+        }
+
+        if degraded_count > 0 {
+            recommendations.push(format!(
+                "Monitor {} degraded factories for potential issues",
+                degraded_count
+            ));
+        }
+
+        if factory_details.iter().any(|f| f.response_time.map_or(false, |t| t > Duration::from_millis(50))) {
+            recommendations.push("Some factories have slow response times - consider optimization".to_string());
+        }
+
+        if recommendations.is_empty() {
+            recommendations.push("All factories are operating normally".to_string());
+        }
+
+        recommendations
+    }
+
+    /// Get basic metrics for all factories
+    pub fn get_factory_metrics(&self) -> Vec<FactoryMetrics> {
+        // TODO: This would require tracking metrics over time
+        // For now, return placeholder metrics
+        match self.get_factories_lock() {
+            Ok(factories) => {
+                factories.iter().map(|(type_id, factory)| {
+                    let info = factory.get_info();
+                    FactoryMetrics {
+                        factory_name: info.name,
+                        factory_id: *type_id,
+                        total_creations: 0,
+                        successful_creations: 0,
+                        failed_creations: 0,
+                        average_creation_time: Duration::from_millis(10),
+                        fastest_creation_time: Duration::from_millis(5),
+                        slowest_creation_time: Duration::from_millis(50),
+                        preferred_precisions: vec![DataPrecision::F32],
+                    }
+                }).collect()
+            }
+            Err(_) => vec![],
+        }
     }
 }
 
@@ -1643,5 +2090,59 @@ mod tests {
 
         // Should complete quickly
         assert!(query_duration < std::time::Duration::from_millis(100));
+    }
+
+    #[test]
+    fn test_precision_matrix() {
+        let manager = standard_test_manager!(cpu_gpu);
+        let matrix = manager.get_precision_matrix();
+
+        // Should have multiple precisions and factories
+        assert!(!matrix.precisions.is_empty());
+        assert_eq!(matrix.factories.len(), 2); // CPU and GPU factories
+
+        // Check coverage map
+        assert!(matrix.coverage_map.contains_key(&DataPrecision::F32));
+        let f32_factories = &matrix.coverage_map[&DataPrecision::F32];
+        assert!(f32_factories.len() > 0);
+    }
+
+    #[test]
+    fn test_find_best_factory() {
+        let manager = standard_test_manager!(cpu_gpu);
+
+        let requirements = RendererRequirements {
+            required_capabilities: vec!["gpu_rendering".to_string()],
+            preferred_precision: DataPrecision::F32,
+            max_timeout: Duration::from_secs(10),
+            performance_priority: PerformancePriority::Speed,
+        };
+
+        let best_factory = manager.find_best_factory(&requirements);
+        assert!(best_factory.is_some());
+
+        let factory = best_factory.unwrap();
+        assert_eq!(factory.name, "GpuRenderer");
+    }
+
+    #[test]
+    fn test_health_check() {
+        let manager = standard_test_manager!(cpu_gpu);
+        let health_report = manager.health_check();
+
+        assert_eq!(health_report.total_factories, 2);
+        assert!(health_report.healthy_factories > 0);
+        assert!(!health_report.recommended_actions.is_empty());
+    }
+
+    #[test]
+    fn test_factory_metrics() {
+        let manager = standard_test_manager!(cpu_gpu);
+        let metrics = manager.get_factory_metrics();
+
+        assert_eq!(metrics.len(), 2);
+        for metric in metrics {
+            assert!(!metric.factory_name.is_empty());
+        }
     }
 }

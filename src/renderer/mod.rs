@@ -19,6 +19,7 @@ use tokio::sync::mpsc::{UnboundedReceiver};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::pin::Pin;
 use std::future::Future;
+use std::time::Duration;
 
 // Global counter for generating unique renderer IDs
 static NEXT_RENDERER_ID: AtomicU64 = AtomicU64::new(1);
@@ -541,6 +542,33 @@ impl fmt::Display for RendererError {
 }
 
 impl std::error::Error for RendererError {}
+
+#[derive(Debug, Clone)]
+pub struct RendererRequirements {
+    pub required_capabilities: Vec<String>,
+    pub preferred_precision: DataPrecision,
+    pub max_timeout: Duration,
+    pub performance_priority: PerformancePriority,
+}
+
+#[derive(Debug, Clone)]
+pub enum PerformancePriority {
+    Speed,    // Prioritize fastest rendering
+    Quality,  // Prioritize best visual quality
+    Memory,   // Prioritize low memory usage
+    Balanced, // Balance all factors
+}
+
+impl Default for RendererRequirements {
+    fn default() -> Self {
+        Self {
+            required_capabilities: vec![],
+            preferred_precision: DataPrecision::F32,
+            max_timeout: Duration::from_secs(5),
+            performance_priority: PerformancePriority::Balanced,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
