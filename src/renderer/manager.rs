@@ -1105,13 +1105,21 @@ mod tests {
 
     #[test]
     fn test_find_by_capability_not_found() {
-        let manager = create_test_manager_with_factories();
+        // Create manager with factory that has specific capabilities
+        let mut manager = RendererManager::new();
+        let factory = Box::new(MockRendererFactory::new_full(
+            "TestRenderer",
+            vec![DataPrecision::F32, DataPrecision::F64],
+            "cpu_rendering,basic_3d,software", // Has these capabilities
+            3000,
+        ));
+        manager.register(factory).unwrap();
 
-        // Search for non-existent capability
+        // Search for non-existent capability - should return empty
         let result = manager.find_by_capability("quantum_rendering");
         assert!(result.is_empty());
 
-        // Search for capability with different case
+        // Search for capability with different case - should return empty (case sensitive)
         let result = manager.find_by_capability("CPU_RENDERING");
         assert!(result.is_empty());
     }
@@ -1126,14 +1134,33 @@ mod tests {
 
     #[test]
     fn test_find_by_capability_whitespace_handling() {
-        let manager = create_test_manager_with_factories();
+        // Create manager with factory that has specific capabilities
+        let mut manager = RendererManager::new();
+        let factory = Box::new(MockRendererFactory::new_full(
+            "TestRenderer",
+            vec![DataPrecision::F32, DataPrecision::F64],
+            "cpu_rendering,gpu_rendering,basic_3d", // Has these exact capabilities
+            3000,
+        ));
+        manager.register(factory).unwrap();
 
         // Test that capability matching handles whitespace correctly
         let result = manager.find_by_capability(" cpu_rendering ");
         assert!(result.is_empty()); // Should not match due to leading/trailing spaces
 
         let result = manager.find_by_capability("cpu_rendering");
-        assert_eq!(result.len(), 2); // Should match exactly
+        assert_eq!(result.len(), 1); // Should match exactly
+        assert_eq!(result[0].name, "TestRenderer");
+
+        // Test other variations with whitespace
+        let result = manager.find_by_capability(" gpu_rendering");
+        assert!(result.is_empty()); // Leading space should not match
+
+        let result = manager.find_by_capability("gpu_rendering ");
+        assert!(result.is_empty()); // Trailing space should not match
+
+        let result = manager.find_by_capability("gpu_rendering");
+        assert_eq!(result.len(), 1); // Exact match should work
     }
 
     #[test]
