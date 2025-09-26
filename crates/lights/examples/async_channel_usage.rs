@@ -1,4 +1,4 @@
-use fulgor::AsyncChannelConfig;
+use lights::AsyncChannelConfig;
 
 #[tokio::main]
 async fn main() {

@@ -1,15 +1,11 @@
 [package]
-name = "atrium"
+name = "fulgor"
 version = "0.1.0"
 edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/your-org/fulgor"
-description = "Main GUI coordinator for Fulgor IDE"
-
-# [[bin]]
-# name = "fulgor"
-# path = "src/main.rs"
+description = "Revolutionary node-based IDE with visual programming"
 
 [dependencies]
 # All internal crates
@@ -18,7 +14,4 @@ forge = { path = "../forge" }
 lights = { path = "../lights" }
 agora = { path = "../agora" }
 optical = { path = "../optical" }
-
-# Minimal external dependencies
-anyhow = "1.0"
-clap = { version = "4.0", features = ["derive"] }
+atrium = { path = "../atrium" }

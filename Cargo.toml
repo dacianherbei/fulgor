@@ -1,7 +1,8 @@
 [workspace]
 members = [
+    "crates/fulgor",
     "crates/nexus",
-    "crates/forge", 
+    "crates/forge",
     "crates/lights",
     "crates/agora",
     "crates/optical",
@@ -9,29 +10,3 @@ members = [
 ]
 
 resolver = "2"
-
-[workspace.package]
-version = "0.1.0"
-edition = "2021"
-authors = ["Dacian Herbei <dacian.herbei@gmail.com>"]
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/your-org/fulgor"
-homepage = "https://fulgor.dev"
-
-[workspace.dependencies]
-# Shared dependencies across workspace
-tokio = { version = "1.0", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-anyhow = "1.0"
-thiserror = "1.0"
-tracing = "0.1"
-tracing-subscriber = "0.3"
-
-# Internal crate dependencies
-nexus = { path = "crates/nexus" }
-forge = { path = "crates/forge" }
-lights = { path = "crates/lights" }
-agora = { path = "crates/agora" }
-optical = { path = "crates/optical" }
-atrium = { path = "crates/atrium" }

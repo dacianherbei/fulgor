@@ -1,6 +1,6 @@
 // Fixed example for buffered_async_sender_usage.rs
 
-use fulgor::renderer::{
+use lights::renderer::{
     async_communication::{AsyncEventReceiver, AsyncChannelConfig},
     factory::{RendererFactory, MockRendererFactory},
     RendererEvent, DataPrecision
@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fulgor::renderer::factory::MockRendererFactory;
+    use lights::renderer::factory::MockRendererFactory;
 
     #[tokio::test]
     async fn test_buffered_async_sender_usage() -> Result<(), Box<dyn std::error::Error>> {

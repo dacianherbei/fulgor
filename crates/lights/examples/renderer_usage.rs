@@ -1,6 +1,6 @@
 //! Example usage of the renderer system with capability-based selection.
 
-use fulgor::renderer::prelude::*;
+use lights::renderer::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize manager and register all available renderers

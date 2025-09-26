@@ -3,8 +3,8 @@
 //! This example demonstrates how to use the AsyncEventReceiver with
 //! different event types and configurations, showing the template flexibility.
 
-use fulgor::renderer::{RendererEvent};
-use fulgor::{AsyncEventReceiver, AsyncChannelConfig};
+use lights::renderer::{RendererEvent};
+use lights::{AsyncEventReceiver, AsyncChannelConfig};
 use async_channel;
 use futures::StreamExt;
 use std::time::Duration;

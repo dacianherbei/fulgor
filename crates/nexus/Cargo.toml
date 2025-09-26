@@ -1,42 +1,13 @@
 [package]
 name = "nexus"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/your-org/fulgor"
 description = "Node-based execution engine for Fulgor IDE"
 
 [dependencies]
-# Workspace dependencies
-tokio.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-anyhow.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
-
-# Specific dependencies
-toml = "0.8"
-uuid = { version = "1.0", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-async-trait = "0.1"
-futures = "0.3"
-
-# Optional for library integration
-cargo_metadata = { version = "0.18", optional = true }
-syn = { version = "2.0", features = ["full"], optional = true }
-quote = "1.0"
-proc-macro2 = "1.0"
-
-[features]
-default = ["library-integration"]
-library-integration = ["cargo_metadata", "syn"]
-
-[dev-dependencies]
-tokio-test = "0.4"
-criterion = "0.5"
-
-[[bench]]
-name = "execution_performance"
-harness = false
+# Minimal for basic structure
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0"

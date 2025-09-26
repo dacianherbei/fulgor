@@ -1,6 +1,6 @@
 // Fixed factory_demo.rs - Updated to work with current OpenGL3RendererConfig structure
 
-use fulgor::renderer::{
+use lights::renderer::{
     manager::RendererManager,
     factory::{RendererFactory, MockRendererFactory},
     custom::opengl3::{OpenGL3RendererFactory, OpenGL3Renderer, OpenGL3RendererConfig, OpenGL3RendererBuilder},

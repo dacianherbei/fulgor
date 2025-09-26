@@ -1,36 +1,12 @@
 [package]
 name = "agora"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/your-org/fulgor"
 description = "Crypto marketplace for Fulgor IDE"
 
 [dependencies]
-# Workspace dependencies
-nexus.workspace = true
-lights.workspace = true
-tokio.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-anyhow.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
-
-# Crypto and blockchain
-ethers = "2.0"
-web3 = "0.19"
-secp256k1 = "0.27"
-sha2 = "0.10"
-hex = "0.4"
-
-# HTTP and networking
-reqwest = { version = "0.11", features = ["json"] }
-url = "2.4"
-
-# Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }
-
-[dev-dependencies]
-tokio-test = "0.4"
+nexus = { path = "../nexus" }
+anyhow = "1.0"
