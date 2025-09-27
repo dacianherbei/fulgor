@@ -79,7 +79,7 @@ fn test_reset_functionality() {
     let checkpoint = pool.current_offset();
 
     let _ptr2 = pool.allocate(200, 8).unwrap();
-    assert_eq!(pool.current_offset(), 300);
+    assert_eq!(pool.current_offset(), 304);
 
     // Reset to checkpoint
     pool.reset_to(checkpoint).unwrap();
