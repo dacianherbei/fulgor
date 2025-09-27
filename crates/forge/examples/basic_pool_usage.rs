@@ -1,6 +1,7 @@
 //! Basic memory pool usage example demonstrating stack-like allocation semantics.
 
 use forge::memory::MemoryPool;
+use std::ptr::NonNull;
 
 fn main() -> anyhow::Result<()> {
     println!("🔧 Basic Memory Pool Usage");
