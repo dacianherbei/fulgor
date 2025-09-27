@@ -1,6 +1,6 @@
 //! Research-based performance comparison using optimized memory pool techniques.
 
-use forge::memory::optimized_pool::FastPoolConfig;
+use forge::memory::optimized_pool::{OptimizedPool, FastPoolConfig};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::time::Instant;
 
@@ -8,8 +8,11 @@ fn main() -> anyhow::Result<()> {
     println!("🚀 Research-Based Memory Pool Performance Comparison");
     println!("===================================================");
 
-    let iterations = 100_000; // More iterations for better measurement
+    let iterations = 10_000; // Start with smaller iterations for testing
     let allocation_size = 64;
+
+    println!("Test parameters: {} iterations of {} bytes each", iterations, allocation_size);
+    println!("Total memory needed: {} KB", (iterations * allocation_size) / 1024);
 
     // Test 1: Original memory pool vs optimized pool
     compare_pool_implementations(iterations, allocation_size)?;
@@ -32,6 +35,10 @@ fn compare_pool_implementations(iterations: usize, size: usize) -> anyhow::Resul
 
     // Test optimized pool (fastest configuration)
     let fast_config = FastPoolConfig::fastest();
+    println!("Pool size: {} MB", fast_config.pool_size / (1024 * 1024));
+    println!("Alignment: {} bytes", fast_config.alignment);
+    println!("Stats enabled: {}", fast_config.enable_stats);
+
     let optimized_time = time_optimized_pool_operations(iterations, size, &fast_config)?;
 
     // Test optimized pool with stats
@@ -173,9 +180,24 @@ fn time_optimized_pool_operations(
 
     let start = Instant::now();
 
-    for _ in 0..iterations {
+    // Allocate in batches with resets (more realistic usage)
+    let batch_size = 1000; // Reset every 1000 allocations
+    for batch in 0..(iterations / batch_size) {
+        for _ in 0..batch_size {
+            let ptr = pool.allocate_fast(size)?;
+            // Prevent optimization
+            unsafe {
+                std::ptr::write_volatile(ptr.as_ptr(), batch as u8);
+            }
+        }
+        // Reset pool between batches (stack-like usage)
+        pool.reset_fast();
+    }
+
+    // Handle remaining allocations
+    let remaining = iterations % batch_size;
+    for _ in 0..remaining {
         let ptr = pool.allocate_fast(size)?;
-        // Prevent optimization
         unsafe {
             std::ptr::write_volatile(ptr.as_ptr(), 42);
         }

@@ -206,16 +206,16 @@ impl FastPoolConfig {
     /// Fastest possible configuration - no stats, minimal alignment.
     pub fn fastest() -> Self {
         Self {
-            pool_size: 512 * 1024, // 512KB - fits in L2 cache
-            alignment: 8,          // Minimal alignment
-            enable_stats: false,   // Zero overhead
+            pool_size: 8 * 1024 * 1024, // 8MB - enough for benchmarks
+            alignment: 8,               // Minimal alignment
+            enable_stats: false,        // Zero overhead
         }
     }
 
     /// Fast configuration with statistics enabled.
     pub fn fast_with_stats() -> Self {
         Self {
-            pool_size: 512 * 1024,
+            pool_size: 8 * 1024 * 1024, // 8MB - enough for benchmarks
             alignment: 8,
             enable_stats: true,
         }
