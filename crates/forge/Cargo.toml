@@ -5,8 +5,14 @@ edition = "2021"
 authors = ["Your Name <your.email@example.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/your-org/fulgor"
-description = "LLVM-based code generation for Fulgor IDE"
+description = "High-performance memory management and LLVM integration for Fulgor IDE"
 
 [dependencies]
 nexus = { path = "../nexus" }
 anyhow = "1.0"
+thiserror = "2.0.16"
+criterion = "0.7.0"
+
+[[bench]]
+name = "memory_performance"
+harness = false

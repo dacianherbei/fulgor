@@ -1,4 +1,4 @@
-use crate::renderer::{DataPrecision, PerformancePriority, Renderer, RendererError, RendererFactory, RendererInfo, RendererRequirements};
+use crate::renderer::{DataPrecision, Renderer, RendererError, RendererFactory, RendererInfo, RendererRequirements};
 use std::any::TypeId;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{mpsc, Arc, Mutex, MutexGuard};
@@ -1133,6 +1133,7 @@ impl Drop for RendererManager {
 mod tests {
     use super::*;
     use crate::renderer::factory::MockRendererFactory;
+    use crate::renderer::PerformancePriority;
     use std::sync::Arc;
     use std::thread;
 
