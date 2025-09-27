@@ -44,11 +44,20 @@ impl MemoryPool {
     /// Create a new memory pool with the specified size.
     ///
     /// # Arguments
-    /// * `size` - Size of the pool in bytes, will be aligned to page boundaries
+    /// * `size` - Minimum size of the pool in bytes. The actual size will be aligned
+    ///           to 4KB page boundaries for optimal performance and may be larger.
     ///
     /// # Returns
     /// * `Ok(MemoryPool)` - Successfully created pool
     /// * `Err(PoolError)` - Failed to allocate backing memory
+    ///
+    /// # Examples
+    /// ```
+    /// # use forge::memory::pool::MemoryPool;
+    /// let pool = MemoryPool::new(1000).unwrap();
+    /// // Pool size will be at least 1000 bytes, but likely 4096 due to page alignment
+    /// assert!(pool.total_size() >= 1000);
+    /// ```
     pub fn new(size: usize) -> Result<Self, PoolError> {
         Self::new_with_alignment(size, 8) // Default to 8-byte alignment
     }
@@ -56,8 +65,16 @@ impl MemoryPool {
     /// Create a new memory pool with specific alignment requirements.
     ///
     /// # Arguments
-    /// * `size` - Size of the pool in bytes
-    /// * `alignment` - Required alignment (must be power of 2)
+    /// * `size` - Minimum size of the pool in bytes. The actual size will be aligned
+    ///           to 4KB page boundaries for optimal performance and may be larger.
+    /// * `alignment` - Required alignment (must be power of 2, minimum 8 bytes)
+    ///
+    /// # Examples
+    /// ```
+    /// # use forge::memory::pool::MemoryPool;
+    /// let pool = MemoryPool::new_with_alignment(1000, 16).unwrap();
+    /// assert!(pool.total_size() >= 1000);
+    /// ```
     pub fn new_with_alignment(size: usize, alignment: usize) -> Result<Self, PoolError> {
         // Validate alignment is power of 2
         if !alignment.is_power_of_two() {
@@ -68,6 +85,7 @@ impl MemoryPool {
         let alignment = alignment.max(8);
 
         // Align size to page boundaries for better performance
+        // This reduces TLB misses and improves cache locality
         let aligned_size = (size + 4095) & !4095; // Round up to 4KB pages
 
         // Create layout for the buffer
@@ -225,6 +243,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_page_alignment_behavior() {
+        // Pool sizes get aligned to 4KB page boundaries for performance
+        let small_pool = MemoryPool::new(100).unwrap();
+        assert_eq!(small_pool.total_size(), 4096); // Aligned to 4KB
+
+        let medium_pool = MemoryPool::new(5000).unwrap();
+        assert_eq!(medium_pool.total_size(), 8192); // Aligned to 8KB
+
+        let large_pool = MemoryPool::new(8192).unwrap();
+        assert_eq!(large_pool.total_size(), 8192); // Already aligned
+    }
+
+    #[test]
     fn test_pool_creation() {
         let pool = MemoryPool::new(1024).unwrap();
         assert_eq!(pool.current_offset(), 0);
@@ -260,11 +291,15 @@ mod tests {
     fn test_pool_exhaustion() {
         let mut pool = MemoryPool::new(100).unwrap();
 
-        // This should succeed
-        let _ptr1 = pool.allocate(50, 8).unwrap();
+        // Get the actual pool size (may be aligned up to page boundaries)
+        let actual_size = pool.total_size();
 
-        // This should fail
-        let result = pool.allocate(100, 8);
+        // Fill most of the pool
+        let large_allocation = actual_size - 64; // Leave small amount
+        let _ptr1 = pool.allocate(large_allocation, 8).unwrap();
+
+        // This should fail - trying to allocate more than remaining space
+        let result = pool.allocate(128, 8); // More than the 64 bytes left
         assert!(matches!(result, Err(PoolError::PoolExhausted { .. })));
     }
 

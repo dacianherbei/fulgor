@@ -1,7 +1,7 @@
 //! Integration tests for the forge memory management system.
 
 use forge::memory::pool::{MemoryPool, PoolError};
-use forge::{ForgeConfig};
+use forge::ForgeConfig;
 use std::thread;
 
 #[test]
@@ -99,12 +99,54 @@ fn test_high_water_mark() {
     assert_eq!(pool.high_water_mark(), 100);
 
     let _ptr2 = pool.allocate(200, 8).unwrap();
-    assert_eq!(pool.high_water_mark(), 300);
+    // After allocating 100 bytes, the next allocation at 8-byte alignment
+    // will start at offset 104 (100 rounded up to next 8-byte boundary)
+    // So: 104 + 200 = 304
+    assert_eq!(pool.high_water_mark(), 304);
 
     // Reset and allocate smaller amount
     pool.reset();
     let _ptr3 = pool.allocate(50, 8).unwrap();
-    assert_eq!(pool.high_water_mark(), 300); // Should remain at peak
+    assert_eq!(pool.high_water_mark(), 304); // Should remain at peak
+}
+
+#[test]
+fn test_high_water_mark_aligned() {
+    let mut pool = MemoryPool::new(1024).unwrap();
+
+    // Use sizes that are multiples of 8 to avoid alignment padding
+    let _ptr1 = pool.allocate(96, 8).unwrap();  // 96 is multiple of 8
+    assert_eq!(pool.high_water_mark(), 96);
+
+    let _ptr2 = pool.allocate(200, 8).unwrap(); // 200 is multiple of 8
+    assert_eq!(pool.high_water_mark(), 296);   // 96 + 200 = 296
+
+    // Reset and allocate smaller amount
+    pool.reset();
+    let _ptr3 = pool.allocate(48, 8).unwrap();  // 48 is multiple of 8
+    assert_eq!(pool.high_water_mark(), 296);   // Should remain at peak
+}
+
+#[test]
+fn test_alignment_behavior() {
+    let mut pool = MemoryPool::new(1024).unwrap();
+
+    // Allocate 100 bytes with 8-byte alignment
+    let _ptr1 = pool.allocate(100, 8).unwrap();
+    let offset_after_first = pool.current_offset();
+    assert_eq!(offset_after_first, 100);
+
+    // Next allocation should be aligned to 8-byte boundary
+    let _ptr2 = pool.allocate(200, 8).unwrap();
+    let offset_after_second = pool.current_offset();
+
+    // 100 rounded up to next 8-byte boundary is 104
+    // Then add 200 bytes: 104 + 200 = 304
+    assert_eq!(offset_after_second, 304);
+
+    // Verify alignment
+    let ptr2_addr = _ptr2.as_ptr() as usize;
+    assert_eq!(ptr2_addr % 8, 0, "Second allocation should be 8-byte aligned");
 }
 
 #[test]
